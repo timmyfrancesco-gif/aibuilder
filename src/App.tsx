@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react'
-import Anthropic from '@anthropic-ai/sdk'
 import ChatPanel from './components/ChatPanel'
 import PreviewPanel from './components/PreviewPanel'
 
@@ -9,29 +8,6 @@ export interface Message {
   content: string
   displayContent?: string
 }
-
-const SYSTEM_PROMPT = `Sei un esperto web designer e sviluppatore. Il tuo compito è creare siti web professionali e moderni.
-
-REGOLE FONDAMENTALI:
-1. Rispondi SEMPRE con una pagina HTML completa e autosufficiente all'interno di un blocco di codice \`\`\`html ... \`\`\`
-2. L'HTML deve includere tutti gli stili CSS inline o in tag <style> e tutto il JavaScript in tag <script>
-3. Puoi usare CDN esterni come Tailwind CSS CDN, Google Fonts, Font Awesome, Alpine.js, ecc.
-4. Dopo il blocco di codice, aggiungi una breve descrizione in italiano di 1-2 frasi di cosa hai creato
-5. Usa Tailwind CSS via CDN per gli stili quando appropriato: <script src="https://cdn.tailwindcss.com"></script>
-6. Rendi i siti visivamente accattivanti, moderni e professionali
-7. Quando modifichi un sito, restituisci SEMPRE l'HTML completo aggiornato (non solo le differenze)
-8. Includi animazioni CSS, hover effects e transizioni per rendere il sito interattivo
-9. Assicurati che il sito sia responsive e funzioni bene su mobile
-
-Esempio di risposta corretta:
-\`\`\`html
-<!DOCTYPE html>
-<html lang="it">
-...pagina completa...
-</html>
-\`\`\`
-
-Ecco il tuo nuovo sito web professionale! Ho creato una landing page moderna con...`
 
 function extractHtmlAndText(content: string): { html: string | null; text: string } {
   const htmlMatch = content.match(/```html\s*([\s\S]*?)```/)
@@ -55,10 +31,8 @@ export default function App() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
 
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
-
   const handleSendMessage = useCallback(async (userInput: string) => {
-    if (!apiKey || isStreaming) return
+    if (isStreaming) return
 
     const userMessage: Message = {
       id: generateId(),
@@ -70,11 +44,6 @@ export default function App() {
     setIsStreaming(true)
     setStreamingText('')
 
-    const anthropic = new Anthropic({
-      apiKey,
-      dangerouslyAllowBrowser: true,
-    })
-
     const conversationHistory = [...messages, userMessage].map(msg => ({
       role: msg.role as 'user' | 'assistant',
       content: msg.content,
@@ -83,35 +52,48 @@ export default function App() {
     let fullResponse = ''
 
     try {
-      const stream = await anthropic.messages.stream({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 8192,
-        system: SYSTEM_PROMPT,
-        messages: conversationHistory,
+      const response = await fetch('/api/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: conversationHistory }),
       })
 
-      for await (const chunk of stream) {
-        if (
-          chunk.type === 'content_block_delta' &&
-          chunk.delta.type === 'text_delta'
-        ) {
-          fullResponse += chunk.delta.text
-          setStreamingText(fullResponse)
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Errore sconosciuto' }))
+        throw new Error(err.error || `HTTP ${response.status}`)
+      }
 
-          // Update HTML preview live as it streams
-          const { html } = extractHtmlAndText(fullResponse)
-          if (html) {
-            setGeneratedHtml(html)
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const lines = decoder.decode(value).split('\n')
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = line.slice(6)
+          if (data === '[DONE]') break
+
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.error) throw new Error(parsed.error)
+            if (parsed.text) {
+              fullResponse += parsed.text
+              setStreamingText(fullResponse)
+              const { html } = extractHtmlAndText(fullResponse)
+              if (html) setGeneratedHtml(html)
+            }
+          } catch (e) {
+            if (e instanceof SyntaxError) continue
+            throw e
           }
         }
       }
 
-      // Final processing after stream completes
       const { html, text } = extractHtmlAndText(fullResponse)
-
-      if (html) {
-        setGeneratedHtml(html)
-      }
+      if (html) setGeneratedHtml(html)
 
       const assistantMessage: Message = {
         id: generateId(),
@@ -119,7 +101,6 @@ export default function App() {
         content: fullResponse,
         displayContent: text || 'Ho creato il tuo sito! Puoi vederlo nella preview →',
       }
-
       setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
       const errorMessage: Message = {
@@ -136,36 +117,7 @@ export default function App() {
       setIsStreaming(false)
       setStreamingText('')
     }
-  }, [messages, apiKey, isStreaming])
-
-  if (!apiKey) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gray-950 text-white">
-        <div className="max-w-md text-center p-8 bg-gray-900 rounded-2xl border border-gray-700 shadow-2xl">
-          <div className="text-5xl mb-4">🔑</div>
-          <h1 className="text-2xl font-bold mb-3 text-white">API Key Mancante</h1>
-          <p className="text-gray-400 mb-6 leading-relaxed">
-            Per usare l'AI Website Builder hai bisogno di una API key di Anthropic.
-          </p>
-          <div className="bg-gray-800 rounded-lg p-4 text-left font-mono text-sm text-green-400 mb-6">
-            <p className="text-gray-500 mb-1"># Crea un file .env nella root:</p>
-            <p>VITE_ANTHROPIC_API_KEY=sk-ant-...</p>
-          </div>
-          <p className="text-gray-500 text-sm">
-            Ottieni la tua API key su{' '}
-            <a
-              href="https://console.anthropic.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-violet-400 hover:text-violet-300 underline"
-            >
-              console.anthropic.com
-            </a>
-          </p>
-        </div>
-      </div>
-    )
-  }
+  }, [messages, isStreaming])
 
   return (
     <div className="flex h-screen bg-gray-950 overflow-hidden">
