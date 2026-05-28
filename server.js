@@ -1,7 +1,7 @@
 import express from 'express'
 import cors from 'cors'
-import Anthropic from '@anthropic-ai/sdk'
-import { createReadStream, existsSync } from 'fs'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -27,29 +27,37 @@ REGOLE FONDAMENTALI:
 
 app.post('/api/stream', async (req, res) => {
   const { messages } = req.body
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.GEMINI_API_KEY
 
   if (!apiKey) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY non configurata sul server.' })
+    return res.status(500).json({ error: 'GEMINI_API_KEY non configurata sul server.' })
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
 
-  const anthropic = new Anthropic({ apiKey })
-
   try {
-    const stream = await anthropic.messages.stream({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8192,
-      system: SYSTEM_PROMPT,
-      messages,
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      systemInstruction: SYSTEM_PROMPT,
     })
 
-    for await (const chunk of stream) {
-      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-        res.write(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`)
+    // Convert messages to Gemini format
+    const history = messages.slice(0, -1).map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }],
+    }))
+    const lastMessage = messages[messages.length - 1]
+
+    const chat = model.startChat({ history })
+    const result = await chat.sendMessageStream(lastMessage.content)
+
+    for await (const chunk of result.stream) {
+      const text = chunk.text()
+      if (text) {
+        res.write(`data: ${JSON.stringify({ text })}\n\n`)
       }
     }
 
