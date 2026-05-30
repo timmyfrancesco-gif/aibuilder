@@ -1,34 +1,43 @@
-import { Message } from '../App'
+import type { Message } from '../App'
 
-interface MessageBubbleProps {
-  message: Message
+function BoltIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" style={{ flexShrink: 0, marginTop: '2px' }}>
+      <defs>
+        <linearGradient id="g-bolt" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#7c5cfc" />
+          <stop offset="100%" stopColor="#4f8bfc" />
+        </linearGradient>
+      </defs>
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="url(#g-bolt)" />
+    </svg>
+  )
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user'
-  const displayText = message.displayContent ?? message.content
-
-  if (isUser) {
-    return (
-      <div className="flex justify-end mb-4">
-        <div className="max-w-xs lg:max-w-sm">
-          <div className="bg-gradient-to-br from-violet-600 to-indigo-700 text-white rounded-2xl rounded-tr-sm px-4 py-3 shadow-lg">
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="flex justify-start mb-4">
-      <div className="flex gap-2 max-w-xs lg:max-w-sm">
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-xs font-bold shadow">
-          AI
-        </div>
-        <div className="bg-gray-800 text-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 shadow">
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
-        </div>
+    <div
+      className="msg-in"
+      style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start', gap: '8px', alignItems: 'flex-start' }}
+    >
+      {!isUser && <BoltIcon />}
+      <div style={{
+        maxWidth: '85%',
+        fontSize: '13px',
+        lineHeight: 1.65,
+        whiteSpace: 'pre-wrap',
+        ...(isUser ? {
+          background: '#101022',
+          border: '1px solid #1c1c38',
+          borderRadius: '13px 13px 3px 13px',
+          padding: '10px 14px',
+          color: '#b8b8e0',
+        } : {
+          color: '#7878a8',
+        }),
+      }}>
+        {message.display}
       </div>
     </div>
   )

@@ -1,84 +1,66 @@
-import { useState, useRef, KeyboardEvent } from 'react'
+import { useState, useRef } from 'react'
 
-interface ChatInputProps {
-  onSendMessage: (message: string) => void
-  isDisabled: boolean
-}
+export default function ChatInput({ onSend, disabled }: { onSend: (t: string) => void; disabled: boolean }) {
+  const [text, setText] = useState('')
+  const ref = useRef<HTMLTextAreaElement>(null)
 
-export default function ChatInput({ onSendMessage, isDisabled }: ChatInputProps) {
-  const [input, setInput] = useState('')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  const handleSubmit = () => {
-    const trimmed = input.trim()
-    if (!trimmed || isDisabled) return
-    onSendMessage(trimmed)
-    setInput('')
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-    }
+  const submit = () => {
+    const t = text.trim()
+    if (!t || disabled) return
+    onSend(t)
+    setText('')
+    if (ref.current) ref.current.style.height = 'auto'
   }
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit()
-    }
-  }
-
-  const handleInput = () => {
-    const textarea = textareaRef.current
-    if (textarea) {
-      textarea.style.height = 'auto'
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
-    }
-  }
-
-  const placeholders = [
-    'Crea una landing page per una pizzeria con tema scuro...',
-    'Fai un portfolio per un fotografo minimalista...',
-    'Crea un sito e-commerce per prodotti artigianali...',
-    'Aggiungi un modulo di contatto con validazione...',
-  ]
+  const canSend = text.trim().length > 0 && !disabled
 
   return (
-    <div className="p-4 border-t border-gray-800 bg-gray-900">
-      <div className="flex gap-2 items-end bg-gray-800 rounded-2xl border border-gray-700 focus-within:border-violet-500 transition-colors p-2">
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          disabled={isDisabled}
-          rows={1}
-          placeholder={placeholders[0]}
-          className="flex-1 bg-transparent text-gray-100 placeholder-gray-500 text-sm resize-none outline-none px-2 py-1.5 max-h-40"
-        />
-        <button
-          onClick={handleSubmit}
-          disabled={isDisabled || !input.trim()}
-          className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white transition-all hover:from-violet-400 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed shadow"
-          title="Invia (Enter)"
-        >
-          <svg
-            className="w-4 h-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
-        </button>
-      </div>
-      <p className="text-xs text-gray-600 mt-2 text-center">
-        Premi <kbd className="font-mono bg-gray-800 px-1 rounded">Enter</kbd> per inviare ·{' '}
-        <kbd className="font-mono bg-gray-800 px-1 rounded">Shift+Enter</kbd> per nuova riga
-      </p>
+    <div
+      className="input-box"
+      style={{
+        display: 'flex', alignItems: 'flex-end', gap: '8px',
+        background: '#0d0d1a', border: '1px solid #181830',
+        borderRadius: '13px', padding: '10px 10px 10px 14px',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
+      }}
+    >
+      <textarea
+        ref={ref}
+        value={text}
+        disabled={disabled}
+        rows={1}
+        placeholder="Descrivi il sito che vuoi creare…"
+        onChange={e => {
+          setText(e.target.value)
+          e.currentTarget.style.height = 'auto'
+          e.currentTarget.style.height = Math.min(e.currentTarget.scrollHeight, 148) + 'px'
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+        }}
+        style={{
+          flex: 1, background: 'transparent', border: 'none', outline: 'none',
+          resize: 'none', fontSize: '13px', lineHeight: 1.55,
+          color: '#a8a8d0', fontFamily: 'inherit',
+          maxHeight: '148px', minHeight: '20px',
+        }}
+      />
+      <button
+        onClick={submit}
+        disabled={!canSend}
+        style={{
+          flexShrink: 0, width: '30px', height: '30px',
+          borderRadius: '9px', border: 'none', cursor: canSend ? 'pointer' : 'default',
+          background: canSend ? 'linear-gradient(135deg, #7c5cfc, #4f8bfc)' : '#131325',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: canSend ? 1 : 0.4, transition: 'all 0.15s',
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13" />
+          <polygon points="22 2 15 22 11 13 2 9 22 2" />
+        </svg>
+      </button>
     </div>
   )
 }
