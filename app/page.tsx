@@ -23,7 +23,7 @@ export default function HomePage() {
   const handleSend = () => {
     if (!input.trim()) return
     const id = Math.random().toString(36).slice(2, 9)
-    router.push(`/workspace/${id}?prompt=${encodeURIComponent(input)}&model=${model}`)
+    router.push(`/workspace/?id=${id}&prompt=${encodeURIComponent(input)}&model=${model}`)
   }
 
   return (

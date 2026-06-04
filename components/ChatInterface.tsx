@@ -1,7 +1,30 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import PreviewSandbox from './PreviewSandbox'
 import AdvancedSettingsModal from './AdvancedSettingsModal'
+
+const GEMINI_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || ''
+
+const SYSTEM = `Sei un esperto web developer. Genera app web complete.
+REGOLE ASSOLUTE:
+1. Rispondi SOLO con JSON valido, NESSUN testo extra fuori dal JSON
+2. Formato: {"html":"...pagina HTML completa...","description":"...breve descrizione...","files":[{"path":"/index.html","content":"..."}]}
+3. HTML autosufficiente: CSS in <style>, JS in <script>
+4. Usa Tailwind CDN, Google Fonts, Font Awesome se servono
+5. Design professionale, moderno, dark by default, responsive
+6. Includi animazioni e hover effects`
+
+function parseResponse(raw: string): { html: string; description: string; files: { path: string; content: string }[] } | null {
+  try {
+    const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+    return JSON.parse(cleaned)
+  } catch {
+    const m = raw.match(/```html\s*([\s\S]*?)```/)
+    if (m) return { html: m[1].trim(), description: 'Sito generato', files: [] }
+    return null
+  }
+}
 
 interface Message {
   id: string
@@ -60,47 +83,41 @@ export default function ChatInterface({
     setLoading(true)
 
     try {
-      const history = messages.map((m) => ({ role: m.role, content: m.content }))
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: input, history }),
-      })
-      const data = await res.json()
+      const genAI = new GoogleGenerativeAI(GEMINI_KEY)
+      const geminiModel = genAI.getGenerativeModel({ model, systemInstruction: SYSTEM })
+      const history = messages.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }))
+      const chat = geminiModel.startChat({ history })
+      const result = await chat.sendMessage(input)
+      const raw = result.response.text()
+      const data = parseResponse(raw)
 
-      if (data.html) {
+      if (data?.html) {
         setHtml(data.html)
-        const fileChanges =
-          data.files?.map((f: { path: string }) => ({
-            path: f.path,
-            action: 'edited' as const,
-          })) || [{ path: '/index.html', action: 'edited' as const }]
-        const aiMsg: Message = {
+        const fileChanges = data.files?.length
+          ? data.files.map(f => ({ path: f.path, action: 'edited' as const }))
+          : [{ path: '/index.html', action: 'edited' as const }]
+        setMessages(p => [...p, {
           id: Math.random().toString(36).slice(2),
           role: 'assistant',
           content: data.description || 'Sito aggiornato con successo!',
           fileChanges,
-        }
-        setMessages((p) => [...p, aiMsg])
+        }])
       } else {
-        setMessages((p) => [
-          ...p,
-          {
-            id: Math.random().toString(36).slice(2),
-            role: 'assistant',
-            content: data.error || 'Errore nella generazione.',
-          },
-        ])
-      }
-    } catch {
-      setMessages((p) => [
-        ...p,
-        {
+        setMessages(p => [...p, {
           id: Math.random().toString(36).slice(2),
           role: 'assistant',
-          content: 'Errore di connessione. Riprova.',
-        },
-      ])
+          content: 'Errore nel parsing della risposta. Riprova.',
+        }])
+      }
+    } catch (e) {
+      setMessages(p => [...p, {
+        id: Math.random().toString(36).slice(2),
+        role: 'assistant',
+        content: `Errore: ${e instanceof Error ? e.message : 'Riprova.'}`,
+      }])
     } finally {
       setLoading(false)
     }
