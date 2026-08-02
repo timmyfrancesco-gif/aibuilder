@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Downloader · yt-dlp</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⬇️</text></svg>">
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <span class="badge">powered by yt-dlp</span>
+      <h1>Scarica un video<br><span class="accent">nella qualità migliore</span></h1>
+      <p class="sub">Incolla il link di YouTube (o di centinaia di altri siti supportati) e scegli il formato.</p>
+    </header>
+
+    <form id="form" class="search" autocomplete="off">
+      <input
+        id="url"
+        type="url"
+        name="url"
+        placeholder="https://www.youtube.com/watch?v=..."
+        required
+        spellcheck="false">
+      <button type="submit" id="analyze">Analizza</button>
+    </form>
+
+    <p id="alert" class="alert" hidden></p>
+
+    <section id="card" class="card" hidden>
+      <div class="card-top">
+        <img id="thumb" class="thumb" alt="">
+        <div class="meta">
+          <h2 id="title"></h2>
+          <p id="channel" class="muted"></p>
+          <p id="stats" class="muted small"></p>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="field">
+          <label for="mode">Formato</label>
+          <select id="mode">
+            <option value="video">Video (MP4)</option>
+            <option value="audio">Solo audio</option>
+          </select>
+        </div>
+        <div class="field" id="quality-field">
+          <label for="quality">Qualità</label>
+          <select id="quality"></select>
+        </div>
+        <button type="button" id="start" class="primary">Scarica</button>
+      </div>
+
+      <p id="ffmpeg-note" class="note" hidden>
+        ffmpeg non è installato: la qualità massima è limitata ai formati già combinati
+        (di solito 720p) e l'audio viene salvato in M4A. Installa ffmpeg per ottenere il meglio.
+      </p>
+
+      <div id="progress-box" class="progress-box" hidden>
+        <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+        <div class="progress-meta">
+          <span id="progress-label">In coda…</span>
+          <span id="progress-pct">0%</span>
+        </div>
+      </div>
+
+      <a id="save" class="save" hidden download>Salva il file</a>
+    </section>
+
+    <footer class="foot">
+      Usa questo strumento solo per contenuti di cui detieni i diritti o il cui download è consentito.
+    </footer>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

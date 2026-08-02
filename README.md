@@ -1,1 +1,70 @@
-# aibuilder
+# aibuilder — Video Downloader
+
+Sito web che, dato il link di un video di YouTube (o di uno degli altri siti supportati da
+[yt-dlp](https://github.com/yt-dlp/yt-dlp)), lo scarica nella qualità migliore disponibile.
+
+Frontend statico + API FastAPI che pilota yt-dlp come libreria Python.
+
+## Funzionalità
+
+- Incolli il link e vedi subito titolo, canale, durata e anteprima
+- Scelta della qualità: "migliore disponibile" oppure un'altezza specifica (1080p, 720p, …),
+  con l'elenco costruito dai formati realmente offerti dal video
+- Download solo audio (MP3 se ffmpeg è presente, altrimenti M4A)
+- Barra di avanzamento in tempo reale con velocità e tempo rimanente
+- I file scaricati vengono serviti al browser e cancellati dal server dopo un'ora
+
+## Requisiti
+
+- Python 3.10+
+- **ffmpeg** (consigliato). yt-dlp scarica video e audio come flussi separati e li unisce con
+  ffmpeg: senza, la qualità massima è limitata ai formati già combinati (in genere 720p).
+  L'interfaccia rileva l'assenza di ffmpeg e lo segnala.
+
+```bash
+# macOS
+brew install ffmpeg
+# Debian/Ubuntu
+sudo apt install ffmpeg
+```
+
+## Avvio
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+Apri http://localhost:8000
+
+## Struttura
+
+```
+app/
+  main.py            API FastAPI (info, download, progresso, file)
+  downloader.py      wrapper yt-dlp: metadati, job in background, progresso
+  static/            interfaccia (HTML/CSS/JS senza dipendenze)
+downloads/           file temporanei, uno per job (in .gitignore)
+```
+
+## API
+
+| Metodo | Endpoint              | Descrizione                                                       |
+|--------|-----------------------|-------------------------------------------------------------------|
+| GET    | `/api/config`         | Indica se ffmpeg è disponibile                                     |
+| POST   | `/api/info`           | Metadati e qualità disponibili (nessun download)                   |
+| POST   | `/api/download`       | Avvia un job, restituisce l'`id`                                   |
+| GET    | `/api/progress/{id}`  | Stato: `queued`/`downloading`/`processing`/`done`/`error`           |
+| GET    | `/api/file/{id}`      | Scarica il file prodotto                                           |
+
+## Note
+
+- L'app è pensata per uso locale/personale: non ha autenticazione né limiti di richieste,
+  quindi non esporla su internet senza aggiungerli.
+- yt-dlp non viene invocato tramite shell (è importato come libreria) e gli URL sono
+  validati prima dell'uso.
+- YouTube può richiedere una verifica anti-bot su alcune reti: in quel caso serve configurare
+  i cookie di yt-dlp.
+- Scarica solo contenuti di cui detieni i diritti o il cui download è consentito dai termini
+  di servizio della piattaforma.
