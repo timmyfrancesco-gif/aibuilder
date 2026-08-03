@@ -20,6 +20,8 @@ const barFill = $("bar-fill");
 const progressLabel = $("progress-label");
 const progressPct = $("progress-pct");
 const saveLink = $("save");
+const shareBtn = $("share");
+const destNote = $("dest-note");
 
 let corrente = null;   // metadati del video analizzato
 let polling = null;    // handle del setTimeout di polling
@@ -211,9 +213,7 @@ function seguiJob(jobId) {
 
       if (job.status === "done") {
         sessionStorage.removeItem("job");
-        saveLink.href = `/api/file/${jobId}`;
-        saveLink.textContent = `Salva ${job.filename} (${dimensione(job.filesize)})`;
-        saveLink.hidden = false;
+        preparaSalvataggio(job, jobId);
         sbloccaBottoni();
         return;
       }
@@ -251,10 +251,98 @@ function aggiornaProgresso(job) {
   progressLabel.textContent = testo;
 }
 
+// Il tipo MIME giusto è ciò che fa comparire "Salva video" nel menu di condivisione di
+// iOS: con application/octet-stream il sistema non capisce che è un filmato.
+const TIPI = {
+  mp4: "video/mp4",
+  mkv: "video/x-matroska",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+};
+
+// Condividere significa tenere l'intero file in memoria: su un telefono, oltre una certa
+// dimensione la scheda va in crash. Meglio non offrire l'opzione che farla fallire.
+const LIMITE_CONDIVISIONE = 400 * 1024 * 1024;
+
+const IOS =
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+function tipoDi(nome) {
+  return TIPI[(nome || "").split(".").pop().toLowerCase()] || "application/octet-stream";
+}
+
+function preparaSalvataggio(job, jobId) {
+  const url = `/api/file/${jobId}`;
+  const tipo = tipoDi(job.filename);
+
+  saveLink.href = url;
+  saveLink.textContent = `Salva ${job.filename} (${dimensione(job.filesize)})`;
+  saveLink.hidden = false;
+
+  // navigator.share con i file esiste solo in contesto sicuro (https o localhost):
+  // aperto dal telefono via http://192.168.x.x non c'è, e la prova qui sotto lo rileva.
+  let condivisibile = false;
+  try {
+    condivisibile =
+      typeof navigator.canShare === "function" &&
+      job.filesize <= LIMITE_CONDIVISIONE &&
+      navigator.canShare({ files: [new File([], job.filename, { type: tipo })] });
+  } catch {
+    condivisibile = false;
+  }
+
+  shareBtn.hidden = !condivisibile;
+  if (condivisibile) {
+    shareBtn.textContent = IOS ? "Salva nelle Foto" : "Condividi…";
+    shareBtn.onclick = () => condividi(url, job.filename, tipo);
+  }
+
+  destNote.innerHTML = testoDestinazione(condivisibile);
+  destNote.hidden = false;
+}
+
+function testoDestinazione(condivisibile) {
+  if (condivisibile && IOS) {
+    return "«Salva nelle Foto» apre il menu di iOS: scegli <b>Salva video</b>.<br>«Salva» mette il file nell'app File.";
+  }
+  if (IOS) {
+    return (
+      "Il file finisce nell'app <b>File</b>. Per averlo nelle Foto: aprilo, tocca " +
+      "l'icona di condivisione e scegli <b>Salva video</b>.<br>" +
+      "Il pulsante diretto compare solo se apri il sito in https."
+    );
+  }
+  return "Il file viene salvato nella cartella <b>Download</b>.";
+}
+
+async function condividi(url, nome, tipo) {
+  const etichetta = shareBtn.textContent;
+  shareBtn.disabled = true;
+  shareBtn.textContent = "Preparazione…";
+  try {
+    const blob = await (await fetch(url)).blob();
+    await navigator.share({ files: [new File([blob], nome, { type: tipo })] });
+  } catch (err) {
+    // L'utente che chiude il menu non è un errore da segnalare.
+    if (err && err.name !== "AbortError") {
+      mostraErrore("Condivisione non riuscita: usa «Salva» qui sopra.");
+    }
+  } finally {
+    shareBtn.disabled = false;
+    shareBtn.textContent = etichetta;
+  }
+}
+
 // Via anche l'href: nasconderlo e basta lascerebbe un collegamento al download precedente.
 function nascondiSalva() {
   saveLink.hidden = true;
   saveLink.removeAttribute("href");
+  shareBtn.hidden = true;
+  shareBtn.onclick = null;
+  destNote.hidden = true;
 }
 
 function fermaPolling() {

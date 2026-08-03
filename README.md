@@ -45,6 +45,33 @@ uvicorn app.main:app --reload --port 8000
 
 Apri http://localhost:8000
 
+## Dove finisce il file
+
+Su computer il download parte come qualsiasi altro: il file va nella cartella **Download**
+(`/api/file` risponde con `Content-Disposition: attachment`).
+
+## Dal telefono
+
+Avvia il server in ascolto sulla rete locale e apri l'indirizzo del computer dal telefono:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+ipconfig getifaddr en0     # su macOS: l'indirizzo da usare, es. 192.168.1.42
+```
+
+Poi apri `http://192.168.1.42:8000` dal telefono. Attenzione: così l'app è raggiungibile da
+chiunque sia sulla stessa rete e non ha autenticazione.
+
+**Per salvare nelle Foto** l'app mostra un pulsante «Salva nelle Foto» che apre il menu di
+condivisione del sistema, dove si sceglie *Salva video*. Una pagina web non può scrivere
+nel rullino da sola: questo menu è l'unica strada, e il browser lo espone solo in **contesto
+sicuro** (https o localhost). Aperta via `http://192.168.x.x` la funzione non esiste, quindi
+l'app se ne accorge e spiega il percorso alternativo: il file va nell'app **File**, da lì lo
+si apre, si tocca condividi e si sceglie *Salva video*.
+
+Per avere il pulsante diretto serve https, per esempio con un tunnel (`cloudflared tunnel
+--url http://localhost:8000`) che fornisce un indirizzo https temporaneo.
+
 ## Struttura
 
 ```

@@ -208,9 +208,25 @@ select {
 
 .save {
   display: block;
+  width: 100%;
   margin-top: 18px;
   text-align: center;
   text-decoration: none;
+}
+
+.save.secondary {
+  margin-top: 10px;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.dest {
+  margin: 10px 0 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .foot {
