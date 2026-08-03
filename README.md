@@ -16,10 +16,17 @@ Frontend statico + API FastAPI che pilota yt-dlp come libreria Python.
 
 ## Requisiti
 
-- Python 3.10+
+- **Python 3.10 o superiore.** Non è un dettaglio: le release di yt-dlp dal 2026 richiedono
+  3.10+, quindi su Python 3.9 pip installa la 2025.10.14 e YouTube la rifiuta con errori
+  poco chiari («The page needs to be reloaded»). macOS di serie ha ancora 3.9:
+  `brew install python` e ricrea il virtualenv.
 - **ffmpeg** (consigliato). yt-dlp scarica video e audio come flussi separati e li unisce con
   ffmpeg: senza, la qualità massima è limitata ai formati già combinati (in genere 720p).
   L'interfaccia rileva l'assenza di ffmpeg e lo segnala.
+
+L'interfaccia avvisa anche quando la yt-dlp installata ha più di tre mesi o quando Python è
+troppo vecchio per aggiornarla: YouTube cambia spesso e una versione datata smette di
+funzionare senza spiegazioni utili.
 
 ```bash
 # macOS

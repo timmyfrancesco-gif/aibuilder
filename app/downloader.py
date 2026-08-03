@@ -8,11 +8,13 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
+from yt_dlp.version import __version__ as VERSIONE_YTDLP
 
 DOWNLOAD_DIR = Path(__file__).resolve().parent.parent / "downloads"
 DOWNLOAD_DIR.mkdir(exist_ok=True)
@@ -21,6 +23,21 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 JOB_TTL_SECONDS = 60 * 60
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
+
+# YouTube cambia spesso il modo in cui serve i video, e una yt-dlp di qualche mese
+# semplicemente smette di funzionare: meglio dirlo prima che l'utente sbatta su un errore
+# incomprensibile.
+YTDLP_SCADE_DOPO_GIORNI = 90
+
+
+def eta_ytdlp_giorni() -> int | None:
+    """Da quanti giorni è uscita la yt-dlp installata (le versioni sono date: 2026.7.4)."""
+    parti = VERSIONE_YTDLP.split(".")[:3]
+    try:
+        rilascio = date(int(parti[0]), int(parti[1]), int(parti[2]))
+    except (ValueError, IndexError):
+        return None
+    return max(0, (date.today() - rilascio).days)
 
 
 class DownloadFailed(Exception):
@@ -46,6 +63,7 @@ class Job:
     filesize: int | None = None
     error: str | None = None
     created_at: float = field(default_factory=time.time)
+    finished_at: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -78,14 +96,36 @@ def _register(job: Job) -> None:
 
 
 def prune_old_jobs() -> None:
-    """Elimina file e job più vecchi del TTL."""
+    """Elimina file e job conclusi da più del TTL.
+
+    Il tempo si conta dalla fine del download, non dall'inizio: un download lungo non
+    deve vedersi cancellare la cartella mentre è ancora in corso.
+    """
     now = time.time()
     with _jobs_lock:
-        scaduti = [j for j in _jobs.values() if now - j.created_at > JOB_TTL_SECONDS]
+        scaduti = [
+            j
+            for j in _jobs.values()
+            if j.status in ("done", "error")
+            and now - (j.finished_at or j.created_at) > JOB_TTL_SECONDS
+        ]
         for job in scaduti:
             _jobs.pop(job.id, None)
+        vivi = set(_jobs)
+
     for job in scaduti:
         shutil.rmtree(DOWNLOAD_DIR / job.id, ignore_errors=True)
+
+    # Cartelle rimaste da un'esecuzione precedente del server: nessun job in memoria le
+    # rivendica più, quindi resterebbero su disco per sempre.
+    for cartella in DOWNLOAD_DIR.iterdir():
+        if not cartella.is_dir() or cartella.name in vivi:
+            continue
+        try:
+            if now - cartella.stat().st_mtime > JOB_TTL_SECONDS:
+                shutil.rmtree(cartella, ignore_errors=True)
+        except OSError:
+            pass
 
 
 def _format_selector(mode: str, quality: str) -> tuple[str, list[dict[str, Any]], str]:
@@ -106,11 +146,21 @@ def _format_selector(mode: str, quality: str) -> tuple[str, list[dict[str, Any]]
         # Nessun merge possibile: serve un formato già muxato (video+audio nello stesso file).
         return f"best{altezza}[ext=mp4]/best{altezza}/best", [], "mp4"
 
+    # Nessun vincolo sull'estensione qui: sopra i 1080p YouTube spesso offre solo VP9 in
+    # webm, e pretendere ext=mp4 farebbe scegliere in silenzio la variante 1080p.
+    # La preferenza per mp4/H.264 si esprime con FORMAT_SORT, che ordina a parità di
+    # risoluzione invece di escludere formati.
     return (
-        f"bestvideo{altezza}[ext=mp4]+bestaudio[ext=m4a]/bestvideo{altezza}+bestaudio/best{altezza}/best",
+        f"bestvideo{altezza}+bestaudio/best{altezza}/best",
         [],
         "mp4",
     )
+
+
+# A parità di risoluzione preferiamo H.264 in mp4: è l'unica combinazione che QuickTime,
+# Anteprima e Safari aprono senza installare nulla. La risoluzione resta il criterio
+# principale, quindi in 4K (dove H.264 non esiste) si passa comunque a VP9/AV1.
+FORMAT_SORT = ["res", "vcodec:h264", "ext:mp4:m4a"]
 
 
 def _base_opts() -> dict[str, Any]:
@@ -118,6 +168,9 @@ def _base_opts() -> dict[str, Any]:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        # "quiet" non basta a togliere la barra di avanzamento di yt-dlp, che sporcherebbe
+        # il terminale: l'avanzamento lo mostriamo noi nel browser.
+        "noprogress": True,
         "nocheckcertificate": False,
         "retries": 3,
         "socket_timeout": 30,
@@ -126,7 +179,9 @@ def _base_opts() -> dict[str, Any]:
 
 def fetch_info(url: str) -> dict[str, Any]:
     """Metadati del video senza scaricare nulla."""
-    opts = _base_opts() | {"skip_download": True}
+    # "noplaylist" non copre gli indirizzi di playlist o di canale: senza un limite
+    # esplicito yt-dlp estrarrebbe ogni singolo video prima di restituire il primo.
+    opts = _base_opts() | {"skip_download": True, "playlist_items": "1"}
     try:
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -176,43 +231,55 @@ def _run(job: Job) -> None:
 
     opts = _base_opts() | {
         "format": fmt,
+        "format_sort": FORMAT_SORT,
         "postprocessors": postprocessors,
-        "outtmpl": str(cartella / "%(title).150B.%(ext)s"),
-        "restrictfilenames": True,
+        # "%(title,id)s": se il titolo si riduce a nulla dopo la ripulitura si usa l'id,
+        # così due download diversi non finiscono con lo stesso nome.
+        "outtmpl": str(cartella / "%(title,id).150B.%(ext)s"),
         "progress_hooks": [lambda d: _on_progress(job, d)],
         "postprocessor_hooks": [lambda d: _on_postprocess(job, d)],
-        "merge_output_format": "mp4" if job.mode == "video" and HAS_FFMPEG else None,
+        # "mp4/mkv" e non "mp4": se i flussi non sono compatibili con il contenitore mp4
+        # (VP9 con Opus, per esempio) yt-dlp ripiega su mkv invece di produrre un mp4
+        # che poi nessun lettore di sistema riesce ad aprire.
+        "merge_output_format": "mp4/mkv" if job.mode == "video" and HAS_FFMPEG else None,
     }
 
     job.status = "downloading"
+    # Tutto dentro il try: se qualcosa fallisce dopo il download, il thread muore in
+    # silenzio e il job resterebbe "in corso" per sempre agli occhi dell'utente.
     try:
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(job.url, download=True)
         job.title = info.get("title")
+
+        finale = _file_prodotto(info, cartella)
+        if finale is None:
+            _fallisci(job, cartella, "Il download è terminato ma non è stato prodotto alcun file.")
+            return
+
+        job.filename = finale.name
+        job.filesize = finale.stat().st_size
     except DownloadError as exc:
-        job.status = "error"
-        job.error = _pulisci_errore(str(exc))
-        shutil.rmtree(cartella, ignore_errors=True)
+        _fallisci(job, cartella, _pulisci_errore(str(exc)))
         return
     except Exception as exc:  # noqa: BLE001 - qualunque imprevisto va mostrato all'utente
-        job.status = "error"
-        job.error = f"Errore imprevisto: {exc}"
-        shutil.rmtree(cartella, ignore_errors=True)
+        _fallisci(job, cartella, f"Errore imprevisto: {exc}")
         return
 
-    finale = _file_prodotto(info, cartella)
-    if finale is None:
-        job.status = "error"
-        job.error = "Il download è terminato ma non è stato prodotto alcun file."
-        shutil.rmtree(cartella, ignore_errors=True)
-        return
-
-    job.filename = finale.name
-    job.filesize = finale.stat().st_size
     job.progress = 100.0
     job.stream = None
     job.step = None
+    job.finished_at = time.time()
     job.status = "done"
+
+
+def _fallisci(job: Job, cartella: Path, messaggio: str) -> None:
+    job.error = messaggio
+    job.stream = None
+    job.step = None
+    job.finished_at = time.time()
+    job.status = "error"
+    shutil.rmtree(cartella, ignore_errors=True)
 
 
 def _file_prodotto(info: dict[str, Any], cartella: Path) -> Path | None:
@@ -303,10 +370,15 @@ _BANNER_FFMPEG = re.compile(
     r"^(ffmpeg version|ffprobe version|built with|configuration:|lib[a-z]+\s+\d)"
 )
 
+# yt-dlp colora "ERROR:" quando pensa di scrivere su un terminale. Nel browser quelle
+# sequenze finirebbero a schermo come caratteri illeggibili.
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
 
 def _pulisci_errore(messaggio: str) -> str:
     """Rende leggibile l'output di yt-dlp."""
-    righe = [r.strip() for r in messaggio.replace("ERROR: ", "").splitlines() if r.strip()]
+    messaggio = _ANSI.sub("", messaggio).replace("ERROR: ", "")
+    righe = [r.strip() for r in messaggio.splitlines() if r.strip()]
     if not righe:
         return "Download non riuscito."
 
@@ -341,4 +413,17 @@ def _pulisci_errore(messaggio: str) -> str:
             "YouTube ha richiesto una verifica per questa richiesta. "
             "Riprova più tardi o configura i cookie di yt-dlp."
         )
+    # Errori con cui YouTube respinge le versioni di yt-dlp che non riconosce più.
+    if (
+        "page needs to be reloaded" in testo
+        or "Failed to extract any player response" in testo
+        or "nsig extraction failed" in testo
+    ):
+        return (
+            f"YouTube ha rifiutato la richiesta ({VERSIONE_YTDLP}). Di solito significa che "
+            "yt-dlp è troppo vecchio per come funziona YouTube oggi: aggiornalo con "
+            "«pip install -U yt-dlp»."
+        )
+    if "Requested format is not available" in testo:
+        return "La qualità richiesta non è disponibile per questo video: provane un'altra."
     return testo or "Download non riuscito."

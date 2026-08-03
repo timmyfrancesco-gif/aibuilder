@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -13,7 +14,10 @@ from pydantic import BaseModel, field_validator
 from .downloader import (
     DOWNLOAD_DIR,
     HAS_FFMPEG,
+    VERSIONE_YTDLP,
+    YTDLP_SCADE_DOPO_GIORNI,
     DownloadFailed,
+    eta_ytdlp_giorni,
     fetch_info,
     get_job,
     prune_old_jobs,
@@ -59,7 +63,17 @@ class DownloadPayload(UrlPayload):
 
 @app.get("/api/config")
 def config() -> dict:
-    return {"ffmpeg": HAS_FFMPEG}
+    eta = eta_ytdlp_giorni()
+    return {
+        "ffmpeg": HAS_FFMPEG,
+        "ytdlp_version": VERSIONE_YTDLP,
+        "ytdlp_age_days": eta,
+        "ytdlp_stale": eta is not None and eta > YTDLP_SCADE_DOPO_GIORNI,
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+        # Sotto 3.10 pip non può installare le versioni recenti di yt-dlp: si resta
+        # bloccati su una release vecchia che YouTube prima o poi rifiuta.
+        "python_ok": sys.version_info >= (3, 10),
+    }
 
 
 @app.post("/api/info")

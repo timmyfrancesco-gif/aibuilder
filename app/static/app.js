@@ -14,6 +14,7 @@ const qualitySel = $("quality");
 const qualityField = $("quality-field");
 const startBtn = $("start");
 const ffmpegNote = $("ffmpeg-note");
+const ytdlpNote = $("ytdlp-note");
 const progressBox = $("progress-box");
 const barFill = $("bar-fill");
 const progressLabel = $("progress-label");
@@ -42,13 +43,55 @@ const FLUSSI = {
 init();
 
 async function init() {
+  let cfg = null;
   try {
-    const cfg = await (await fetch("/api/config")).json();
+    cfg = await (await fetch("/api/config")).json();
     hasFfmpeg = cfg.ffmpeg;
   } catch {
     /* se la config non risponde restiamo sui default */
   }
   ffmpegNote.hidden = hasFfmpeg;
+  if (cfg) avvisaAmbiente(cfg);
+  riprendiJob();
+}
+
+// YouTube cambia spesso: una yt-dlp vecchia fallisce con errori che non dicono nulla.
+// Meglio segnalarlo subito che lasciare l'utente a indovinare.
+function avvisaAmbiente(cfg) {
+  const mesi = Math.round((cfg.ytdlp_age_days || 0) / 30);
+  if (!cfg.python_ok) {
+    ytdlpNote.textContent =
+      `Stai usando Python ${cfg.python_version}: da 3.10 in poi si possono installare le ` +
+      `versioni recenti di yt-dlp. Ora sei fermo alla ${cfg.ytdlp_version}` +
+      (mesi ? ` (${mesi} mesi fa)` : "") +
+      ", che YouTube potrebbe già rifiutare.";
+    ytdlpNote.hidden = false;
+  } else if (cfg.ytdlp_stale) {
+    ytdlpNote.textContent =
+      `yt-dlp ${cfg.ytdlp_version} è di circa ${mesi} mesi fa. Se un video non parte, ` +
+      "aggiornala con «pip install -U yt-dlp».";
+    ytdlpNote.hidden = false;
+  }
+}
+
+// Se la pagina viene ricaricata durante un download, il job continua sul server:
+// senza questo si perderebbe il file e si ripartirebbe da capo.
+function riprendiJob() {
+  const salvato = sessionStorage.getItem("job");
+  if (!salvato) return;
+  fetch(`/api/progress/${salvato}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((job) => {
+      if (!job || job.status === "error") {
+        sessionStorage.removeItem("job");
+        return;
+      }
+      card.hidden = false;
+      progressBox.hidden = false;
+      aggiornaProgresso(job);
+      seguiJob(salvato);
+    })
+    .catch(() => sessionStorage.removeItem("job"));
 }
 
 form.addEventListener("submit", async (e) => {
@@ -104,7 +147,7 @@ function riempiCard(info) {
   qualityField.hidden = modeSel.value === "audio";
 
   progressBox.hidden = true;
-  saveLink.hidden = true;
+  nascondiSalva();
   barFill.style.width = "0%";
 }
 
@@ -129,7 +172,7 @@ async function avviaDownload() {
 
   fermaPolling();
   mostraErrore(null);
-  saveLink.hidden = true;
+  nascondiSalva();
   progressBox.hidden = false;
   aggiornaProgresso({ status: "queued", progress: 0 });
   startBtn.disabled = true;
@@ -148,6 +191,7 @@ async function avviaDownload() {
     const job = await res.json();
     if (!res.ok) throw new Error(dettaglio(job));
 
+    sessionStorage.setItem("job", job.id);
     seguiJob(job.id);
   } catch (err) {
     mostraErrore(err.message);
@@ -166,6 +210,7 @@ function seguiJob(jobId) {
       aggiornaProgresso(job);
 
       if (job.status === "done") {
+        sessionStorage.removeItem("job");
         saveLink.href = `/api/file/${jobId}`;
         saveLink.textContent = `Salva ${job.filename} (${dimensione(job.filesize)})`;
         saveLink.hidden = false;
@@ -173,6 +218,7 @@ function seguiJob(jobId) {
         return;
       }
       if (job.status === "error") {
+        sessionStorage.removeItem("job");
         mostraErrore(job.error || "Download non riuscito.");
         progressBox.hidden = true;
         sbloccaBottoni();
@@ -180,6 +226,7 @@ function seguiJob(jobId) {
       }
       polling = setTimeout(tick, 800);
     } catch (err) {
+      sessionStorage.removeItem("job");
       mostraErrore(err.message);
       progressBox.hidden = true;
       sbloccaBottoni();
@@ -202,6 +249,12 @@ function aggiornaProgresso(job) {
     testo = `${job.step.charAt(0).toUpperCase()}${job.step.slice(1)}…`;
   }
   progressLabel.textContent = testo;
+}
+
+// Via anche l'href: nasconderlo e basta lascerebbe un collegamento al download precedente.
+function nascondiSalva() {
+  saveLink.hidden = true;
+  saveLink.removeAttribute("href");
 }
 
 function fermaPolling() {
