@@ -27,9 +27,16 @@ let hasFfmpeg = true;
 const ETICHETTE = {
   queued: "In coda…",
   downloading: "Download in corso",
-  processing: "Elaborazione (unione audio/video)…",
+  processing: "Elaborazione…",
   done: "Completato",
   error: "Errore",
+};
+
+// Per la qualità massima video e audio arrivano come due download separati: senza dirlo,
+// la barra sembra ripartire da capo senza motivo.
+const FLUSSI = {
+  video: "Download del video",
+  audio: "Download dell'audio",
 };
 
 init();
@@ -188,8 +195,11 @@ function aggiornaProgresso(job) {
 
   let testo = ETICHETTE[job.status] || job.status;
   if (job.status === "downloading") {
+    testo = FLUSSI[job.stream] || ETICHETTE.downloading;
     const extra = [job.speed, job.eta && `${job.eta} rimanenti`].filter(Boolean).join(" · ");
     if (extra) testo += ` — ${extra}`;
+  } else if (job.status === "processing" && job.step) {
+    testo = `${job.step.charAt(0).toUpperCase()}${job.step.slice(1)}…`;
   }
   progressLabel.textContent = testo;
 }

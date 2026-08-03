@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import threading
 import time
@@ -36,6 +37,10 @@ class Job:
     progress: float = 0.0
     speed: str | None = None
     eta: str | None = None
+    # Per la qualità massima yt-dlp scarica video e audio come flussi separati e li unisce:
+    # l'avanzamento riparte da zero a ogni flusso, quindi diciamo all'utente quale è in corso.
+    stream: str | None = None
+    step: str | None = None
     title: str | None = None
     filename: str | None = None
     filesize: int | None = None
@@ -49,6 +54,8 @@ class Job:
             "progress": round(self.progress, 1),
             "speed": self.speed,
             "eta": self.eta,
+            "stream": self.stream,
+            "step": self.step,
             "title": self.title,
             "filename": self.filename,
             "filesize": self.filesize,
@@ -185,28 +192,54 @@ def _run(job: Job) -> None:
     except DownloadError as exc:
         job.status = "error"
         job.error = _pulisci_errore(str(exc))
+        shutil.rmtree(cartella, ignore_errors=True)
         return
     except Exception as exc:  # noqa: BLE001 - qualunque imprevisto va mostrato all'utente
         job.status = "error"
         job.error = f"Errore imprevisto: {exc}"
+        shutil.rmtree(cartella, ignore_errors=True)
         return
 
-    prodotti = [p for p in cartella.iterdir() if p.is_file() and not p.name.endswith(".part")]
-    if not prodotti:
+    finale = _file_prodotto(info, cartella)
+    if finale is None:
         job.status = "error"
         job.error = "Il download è terminato ma non è stato prodotto alcun file."
+        shutil.rmtree(cartella, ignore_errors=True)
         return
 
-    finale = max(prodotti, key=lambda p: p.stat().st_size)
     job.filename = finale.name
     job.filesize = finale.stat().st_size
     job.progress = 100.0
+    job.stream = None
+    job.step = None
     job.status = "done"
+
+
+def _file_prodotto(info: dict[str, Any], cartella: Path) -> Path | None:
+    """Il file finale così come lo dichiara yt-dlp, senza doverlo indovinare.
+
+    Dopo un merge la cartella può contenere gli scarti dei singoli flussi, e non è detto
+    che il file buono sia il più grande: la traccia audio può superare quella video.
+    """
+    for scaricato in info.get("requested_downloads") or []:
+        for chiave in ("filepath", "_filename", "filename"):
+            valore = scaricato.get(chiave)
+            if valore and Path(valore).is_file():
+                return Path(valore)
+
+    # Riserva: il file completo più recente nella cartella del job.
+    candidati = [
+        p
+        for p in cartella.iterdir()
+        if p.is_file() and p.suffix not in (".part", ".ytdl", ".temp")
+    ]
+    return max(candidati, key=lambda p: p.stat().st_mtime) if candidati else None
 
 
 def _on_progress(job: Job, d: dict[str, Any]) -> None:
     if d.get("status") == "downloading":
         job.status = "downloading"
+        job.stream = _etichetta_flusso(d.get("info_dict") or {})
         totale = d.get("total_bytes") or d.get("total_bytes_estimate")
         scaricato = d.get("downloaded_bytes") or 0
         if totale:
@@ -214,14 +247,36 @@ def _on_progress(job: Job, d: dict[str, Any]) -> None:
         job.speed = _fmt_speed(d.get("speed"))
         job.eta = _fmt_eta(d.get("eta"))
     elif d.get("status") == "finished":
-        job.status = "processing"
+        # Non passiamo a "processing" qui: dopo il flusso video ne può partire un secondo.
+        # Sarà il postprocessor hook a segnalare l'inizio della vera elaborazione.
+        job.progress = 100.0
         job.speed = None
         job.eta = None
+
+
+def _etichetta_flusso(info: dict[str, Any]) -> str | None:
+    ha_video = info.get("vcodec") not in (None, "none")
+    ha_audio = info.get("acodec") not in (None, "none")
+    if ha_video and not ha_audio:
+        return "video"
+    if ha_audio and not ha_video:
+        return "audio"
+    return None
+
+
+_PASSI = {
+    "Merger": "unione di video e audio",
+    "FFmpegMerger": "unione di video e audio",
+    "ExtractAudio": "estrazione dell'audio",
+    "FFmpegExtractAudio": "estrazione dell'audio",
+}
 
 
 def _on_postprocess(job: Job, d: dict[str, Any]) -> None:
     if d.get("status") == "started":
         job.status = "processing"
+        job.stream = None
+        job.step = _PASSI.get(d.get("postprocessor") or "")
 
 
 def _fmt_speed(speed: float | None) -> str | None:
@@ -242,10 +297,39 @@ def _fmt_eta(eta: int | None) -> str | None:
     return f"{minuti}:{secondi:02d}" if minuti else f"{secondi}s"
 
 
+# Righe del banner di ffmpeg (versione, build, elenco delle librerie): non dicono nulla
+# sull'errore, ma finiscono nel messaggio perché yt-dlp riporta l'ultima riga di stderr.
+_BANNER_FFMPEG = re.compile(
+    r"^(ffmpeg version|ffprobe version|built with|configuration:|lib[a-z]+\s+\d)"
+)
+
+
 def _pulisci_errore(messaggio: str) -> str:
     """Rende leggibile l'output di yt-dlp."""
-    testo = messaggio.replace("ERROR: ", "").strip()
-    testo = testo.split("\n")[0]
+    righe = [r.strip() for r in messaggio.replace("ERROR: ", "").splitlines() if r.strip()]
+    if not righe:
+        return "Download non riuscito."
+
+    testo = righe[0]
+
+    if testo.startswith("Postprocessing:"):
+        dettaglio = testo.split(":", 1)[1].strip()
+        # Se resta solo il banner, un messaggio generico è più utile del numero di versione.
+        if not dettaglio or _BANNER_FFMPEG.match(dettaglio):
+            dettaglio = next(
+                (r for r in righe[1:] if not _BANNER_FFMPEG.match(r)),
+                "",
+            )
+        if not dettaglio or _BANNER_FFMPEG.match(dettaglio):
+            return (
+                "ffmpeg non è riuscito a elaborare il file (unione audio/video o "
+                "conversione). Verifica che sia installato e funzionante con "
+                "«ffmpeg -version»."
+            )
+        return f"Errore di ffmpeg: {dettaglio}"
+
+    if "ffmpeg is not installed" in testo or "ffprobe and ffmpeg not found" in testo:
+        return "ffmpeg non è installato: serve per unire video e audio in alta qualità."
     if "Unsupported URL" in testo:
         return "Questo indirizzo non è supportato."
     if "Private video" in testo:
