@@ -15,6 +15,7 @@ const qualityField = $("quality-field");
 const startBtn = $("start");
 const ffmpegNote = $("ffmpeg-note");
 const ytdlpNote = $("ytdlp-note");
+const audioNote = $("audio-note");
 const progressBox = $("progress-box");
 const barFill = $("bar-fill");
 const progressLabel = $("progress-label");
@@ -146,11 +147,22 @@ function riempiCard(info) {
   statsEl.textContent = pezzi.join(" · ");
 
   riempiQualita(info.heights || []);
+  soloAudio(info.has_video === false);
   qualityField.hidden = modeSel.value === "audio";
 
   progressBox.hidden = true;
   nascondiSalva();
   barFill.style.width = "0%";
+}
+
+// Post senza filmato (le slideshow di TikTok): offrire "Video" produrrebbe solo un file
+// audio con l'estensione sbagliata, quindi la scelta si blocca sull'audio.
+function soloAudio(forza) {
+  const opzioneVideo = modeSel.querySelector('option[value="video"]');
+  opzioneVideo.disabled = forza;
+  modeSel.disabled = forza;
+  if (forza) modeSel.value = "audio";
+  audioNote.hidden = !forza;
 }
 
 function riempiQualita(altezze) {

@@ -12,7 +12,7 @@
     <header class="hero">
       <span class="badge">powered by yt-dlp</span>
       <h1>Scarica un video<br><span class="accent">nella qualità migliore</span></h1>
-      <p class="sub">Incolla il link di YouTube (o di centinaia di altri siti supportati) e scegli il formato.</p>
+      <p class="sub">Incolla il link — YouTube, TikTok, Instagram e centinaia di altri siti — e scegli il formato.</p>
     </header>
 
     <form id="form" class="search" autocomplete="off">
@@ -20,7 +20,7 @@
         id="url"
         type="url"
         name="url"
-        placeholder="https://www.youtube.com/watch?v=..."
+        placeholder="https://www.youtube.com/watch?v=…  oppure  https://www.tiktok.com/@…"
         required
         spellcheck="false">
       <button type="submit" id="analyze">Analizza</button>
@@ -58,6 +58,10 @@
         (di solito 720p) e l'audio viene salvato in M4A. Installa ffmpeg per ottenere il meglio.
       </p>
       <p id="ytdlp-note" class="note" hidden></p>
+      <p id="audio-note" class="note" hidden>
+        Questo post non contiene un filmato (è una sequenza di foto): si può scaricare
+        solo la traccia audio.
+      </p>
 
       <div id="progress-box" class="progress-box" hidden>
         <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>

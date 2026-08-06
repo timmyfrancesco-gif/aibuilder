@@ -204,7 +204,17 @@ def fetch_info(url: str) -> dict[str, Any]:
         "webpage_url": info.get("webpage_url") or url,
         "extractor": info.get("extractor_key"),
         "heights": _altezze_disponibili(info),
+        "has_video": _ha_video(info),
     }
+
+
+def _ha_video(info: dict[str, Any]) -> bool:
+    """Alcuni post non contengono un filmato: le slideshow di TikTok, per esempio,
+    espongono solo la traccia audio. Senza questo, chiedere "video" restituirebbe
+    un file audio con estensione da video."""
+    return any(
+        f.get("vcodec") not in (None, "none") for f in info.get("formats") or []
+    )
 
 
 def _altezze_disponibili(info: dict[str, Any]) -> list[int]:

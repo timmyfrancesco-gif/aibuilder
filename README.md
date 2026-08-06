@@ -1,7 +1,13 @@
 # aibuilder — Video Downloader
 
-Sito web che, dato il link di un video di YouTube (o di uno degli altri siti supportati da
-[yt-dlp](https://github.com/yt-dlp/yt-dlp)), lo scarica nella qualità migliore disponibile.
+Sito web che, dato il link di un video, lo scarica nella qualità migliore disponibile.
+Funziona con YouTube, TikTok, Instagram e le centinaia di siti supportati da
+[yt-dlp](https://github.com/yt-dlp/yt-dlp): l'indirizzo viene passato a yt-dlp così com'è,
+quindi non c'è nulla da configurare per piattaforma.
+
+Su TikTok yt-dlp preferisce già da sé la variante **senza watermark**, e i post che sono
+sequenze di foto invece di filmati vengono riconosciuti: l'interfaccia offre solo l'audio
+anziché produrre un file video vuoto.
 
 Frontend statico + API FastAPI che pilota yt-dlp come libreria Python.
 
