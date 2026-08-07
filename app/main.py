@@ -18,6 +18,7 @@ from pydantic import BaseModel, field_validator
 from .downloader import (
     DOWNLOAD_DIR,
     HAS_FFMPEG,
+    SAVE_DIR,
     VERSIONE_YTDLP,
     YTDLP_SCADE_DOPO_GIORNI,
     DownloadFailed,
@@ -97,6 +98,7 @@ def config() -> dict:
     eta = eta_ytdlp_giorni()
     return {
         "ffmpeg": HAS_FFMPEG,
+        "save_dir": str(SAVE_DIR) if SAVE_DIR else None,
         "ytdlp_version": VERSIONE_YTDLP,
         "ytdlp_age_days": eta,
         "ytdlp_stale": eta is not None and eta > YTDLP_SCADE_DOPO_GIORNI,

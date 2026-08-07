@@ -29,6 +29,14 @@ MAX_DISK_BYTES = int(os.environ.get("MAX_DISK_MB", "2048")) * 1024 * 1024
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
+# Con SAVE_DIR impostata (es. ~/Desktop) il file finito viene copiato lì appena pronto,
+# senza passare dal browser. Ha senso solo quando il server gira sulla propria macchina:
+# in cloud scriverebbe sul disco del servizio di hosting, non sul tuo.
+SAVE_DIR: Path | None = None
+_save_env = os.environ.get("SAVE_DIR", "").strip()
+if _save_env:
+    SAVE_DIR = Path(_save_env).expanduser()
+
 # YouTube sfida spesso le richieste che arrivano da un datacenter. Esportando i cookie
 # del proprio browser e incollandoli qui (formato Netscape) si passa come utente normale.
 COOKIE_FILE: str | None = None
@@ -82,6 +90,7 @@ class Job:
     title: str | None = None
     filename: str | None = None
     filesize: int | None = None
+    saved_to: str | None = None
     error: str | None = None
     created_at: float = field(default_factory=time.time)
     finished_at: float | None = None
@@ -98,6 +107,7 @@ class Job:
             "title": self.title,
             "filename": self.filename,
             "filesize": self.filesize,
+            "saved_to": self.saved_to,
             "error": self.error,
         }
 
@@ -314,6 +324,7 @@ def _run(job: Job) -> None:
 
         job.filename = finale.name
         job.filesize = finale.stat().st_size
+        job.saved_to = _copia_in_save_dir(finale)
     except DownloadError as exc:
         _fallisci(job, cartella, _pulisci_errore(str(exc)))
         return
@@ -327,6 +338,35 @@ def _run(job: Job) -> None:
     job.finished_at = time.time()
     job.status = "done"
     _limita_disco()
+
+
+def _copia_in_save_dir(sorgente: Path) -> str | None:
+    """Copia (non sposta) il file finito nella cartella scelta dall'utente.
+
+    Copia perché l'originale continua a servire il pulsante di download nel browser;
+    la copia nel job viene poi eliminata alla scadenza, quella dell'utente resta.
+    Un problema qui non deve far fallire un download andato a buon fine.
+    """
+    if SAVE_DIR is None:
+        return None
+    try:
+        SAVE_DIR.mkdir(parents=True, exist_ok=True)
+        destinazione = _nome_libero(SAVE_DIR / sorgente.name)
+        shutil.copy2(sorgente, destinazione)
+        return str(destinazione)
+    except OSError:
+        return None
+
+
+def _nome_libero(percorso: Path) -> Path:
+    """Evita di sovrascrivere un file già presente: «video.mp4» -> «video (2).mp4»."""
+    if not percorso.exists():
+        return percorso
+    for n in range(2, 100):
+        alternativa = percorso.with_name(f"{percorso.stem} ({n}){percorso.suffix}")
+        if not alternativa.exists():
+            return alternativa
+    return percorso.with_name(f"{percorso.stem} ({uuid.uuid4().hex[:6]}){percorso.suffix}")
 
 
 def _fallisci(job: Job, cartella: Path, messaggio: str) -> None:

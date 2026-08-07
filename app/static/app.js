@@ -312,8 +312,16 @@ function preparaSalvataggio(job, jobId) {
     shareBtn.onclick = () => condividi(url, job.filename, tipo);
   }
 
-  destNote.innerHTML = testoDestinazione(condivisibile);
+  destNote.innerHTML = job.saved_to
+    ? `Già salvato in <b>${escapeHtml(job.saved_to)}</b>.<br>` + testoDestinazione(condivisibile)
+    : testoDestinazione(condivisibile);
   destNote.hidden = false;
+}
+
+function escapeHtml(testo) {
+  const d = document.createElement("div");
+  d.textContent = testo;
+  return d.innerHTML;
 }
 
 function testoDestinazione(condivisibile) {
