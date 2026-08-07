@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import os
+import secrets
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
@@ -26,7 +30,34 @@ from .downloader import (
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-app = FastAPI(title="YouTube Downloader", docs_url=None, redoc_url=None)
+app = FastAPI(title="Video Downloader", docs_url=None, redoc_url=None)
+
+# Esposta su internet l'app sarebbe utilizzabile da chiunque conosca l'indirizzo.
+# Con APP_PASSWORD impostata serve la password; senza (uso locale) non cambia nulla.
+PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
+
+
+@app.middleware("http")
+async def richiedi_password(request: Request, call_next):
+    if not PASSWORD or _password_valida(request.headers.get("authorization", "")):
+        return await call_next(request)
+    return Response(
+        status_code=401,
+        content="Password richiesta.",
+        headers={"WWW-Authenticate": 'Basic realm="Video Downloader", charset="UTF-8"'},
+    )
+
+
+def _password_valida(intestazione: str) -> bool:
+    if not intestazione.startswith("Basic "):
+        return False
+    try:
+        decodificata = base64.b64decode(intestazione[6:], validate=True).decode("utf-8")
+    except (binascii.Error, ValueError):
+        return False
+    _utente, separatore, fornita = decodificata.partition(":")
+    # compare_digest: il confronto non deve rivelare quanti caratteri sono corretti.
+    return bool(separatore) and secrets.compare_digest(fornita, PASSWORD)
 
 
 class UrlPayload(BaseModel):

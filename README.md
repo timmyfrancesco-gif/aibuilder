@@ -78,6 +78,43 @@ si apre, si tocca condividi e si sceglie *Salva video*.
 Per avere il pulsante diretto serve https, per esempio con un tunnel (`cloudflared tunnel
 --url http://localhost:8000`) che fornisce un indirizzo https temporaneo.
 
+## Metterlo online (per usarlo dal telefono senza tenere acceso il computer)
+
+Il repository contiene un `Dockerfile` (con ffmpeg già dentro) e un `render.yaml` pronto per
+[Render](https://render.com), ma l'immagine funziona su qualunque servizio che accetti Docker.
+
+1. Su Render: **New → Blueprint**, scegli questo repository.
+2. Al deploy viene chiesta **APP_PASSWORD**: è la password che protegge il sito. Non lasciarla
+   vuota — senza, chiunque abbia l'indirizzo può usare il tuo server.
+3. Apri l'indirizzo assegnato dal telefono e inserisci la password quando il browser la chiede.
+
+Essendo su https, dal telefono compare anche il pulsante **Salva nelle Foto**.
+
+### Limiti da conoscere
+
+- **YouTube spesso rifiuta le richieste dai datacenter.** È il motivo per cui yt-dlp include
+  un sottosistema apposta (`pot/`, PO Token). Da un IP domestico si passa quasi sempre, da un
+  server in affitto no. Rimedio: esporta i cookie del tuo browser in formato Netscape e
+  incollali nella variabile `YTDLP_COOKIES` — le richieste partiranno come da utente
+  registrato. TikTok e la maggior parte degli altri siti non hanno questo problema.
+- **I piani gratuiti si addormentano** dopo qualche minuto di inattività: la prima richiesta
+  dopo una pausa può metterci un minuto.
+- **Il disco è poco e temporaneo.** `MAX_DISK_MB` (default 2048) elimina automaticamente i
+  download conclusi più vecchi quando lo spazio supera la soglia, e `JOB_TTL_MINUTES`
+  controlla dopo quanto un file scade. I download in corso non vengono mai toccati.
+- Scarica solo ciò che ti è consentito scaricare, e verifica che le condizioni del servizio
+  di hosting che scegli permettano questo tipo di applicazione.
+
+### Variabili d'ambiente
+
+| Variabile           | Effetto                                                          |
+|---------------------|------------------------------------------------------------------|
+| `APP_PASSWORD`      | Protegge il sito. Se vuota, nessuna password (solo per uso locale) |
+| `YTDLP_COOKIES`     | Cookie in formato Netscape, per superare i blocchi di YouTube      |
+| `MAX_DISK_MB`       | Spazio massimo occupato dai download conclusi (default 2048)        |
+| `JOB_TTL_MINUTES`   | Dopo quanto un file scaricato viene eliminato (default 60)          |
+| `PORT`              | Porta di ascolto, assegnata dal servizio di hosting                 |
+
 ## Struttura
 
 ```

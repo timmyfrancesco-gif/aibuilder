@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import threading
@@ -20,9 +21,29 @@ DOWNLOAD_DIR = Path(__file__).resolve().parent.parent / "downloads"
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 # Quanto tempo un file scaricato resta su disco prima di essere rimosso.
-JOB_TTL_SECONDS = 60 * 60
+JOB_TTL_SECONDS = int(os.environ.get("JOB_TTL_MINUTES", "60")) * 60
+
+# Su un server in affitto il disco è poco e si riempie in fretta: oltre questa soglia
+# i download conclusi più vecchi vengono eliminati anche prima della scadenza.
+MAX_DISK_BYTES = int(os.environ.get("MAX_DISK_MB", "2048")) * 1024 * 1024
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
+
+# YouTube sfida spesso le richieste che arrivano da un datacenter. Esportando i cookie
+# del proprio browser e incollandoli qui (formato Netscape) si passa come utente normale.
+COOKIE_FILE: str | None = None
+_cookie_env = os.environ.get("YTDLP_COOKIES", "").strip()
+if _cookie_env:
+    _percorso = Path(os.environ.get("YTDLP_COOKIES_FILE", "/tmp/yt-dlp-cookies.txt"))
+    try:
+        _percorso.write_text(_cookie_env, encoding="utf-8")
+        _percorso.chmod(0o600)
+        COOKIE_FILE = str(_percorso)
+    except OSError:
+        COOKIE_FILE = None
+elif os.environ.get("YTDLP_COOKIES_FILE"):
+    _percorso = Path(os.environ["YTDLP_COOKIES_FILE"])
+    COOKIE_FILE = str(_percorso) if _percorso.is_file() else None
 
 # YouTube cambia spesso il modo in cui serve i video, e una yt-dlp di qualche mese
 # semplicemente smette di funzionare: meglio dirlo prima che l'utente sbatta su un errore
@@ -127,6 +148,29 @@ def prune_old_jobs() -> None:
         except OSError:
             pass
 
+    _limita_disco()
+
+
+def _limita_disco() -> None:
+    """Elimina i download conclusi più vecchi finché lo spazio occupato rientra nel limite.
+
+    Su un piano gratuito il disco è di pochi giga: senza questo, tre video lunghi lo
+    riempiono e ogni download successivo fallisce.
+    """
+    with _jobs_lock:
+        conclusi = sorted(
+            (j for j in _jobs.values() if j.status == "done" and j.filesize),
+            key=lambda j: j.finished_at or j.created_at,
+        )
+    totale = sum(j.filesize or 0 for j in conclusi)
+    for job in conclusi:
+        if totale <= MAX_DISK_BYTES:
+            return
+        totale -= job.filesize or 0
+        with _jobs_lock:
+            _jobs.pop(job.id, None)
+        shutil.rmtree(DOWNLOAD_DIR / job.id, ignore_errors=True)
+
 
 def _format_selector(mode: str, quality: str) -> tuple[str, list[dict[str, Any]], str]:
     """Restituisce (format string, postprocessors, estensione preferita)."""
@@ -168,6 +212,7 @@ def _base_opts() -> dict[str, Any]:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "cookiefile": COOKIE_FILE,
         # "quiet" non basta a togliere la barra di avanzamento di yt-dlp, che sporcherebbe
         # il terminale: l'avanzamento lo mostriamo noi nel browser.
         "noprogress": True,
@@ -281,6 +326,7 @@ def _run(job: Job) -> None:
     job.step = None
     job.finished_at = time.time()
     job.status = "done"
+    _limita_disco()
 
 
 def _fallisci(job: Job, cartella: Path, messaggio: str) -> None:

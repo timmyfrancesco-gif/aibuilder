@@ -1,0 +1,20 @@
+# Configurazione per Render (https://render.com). Al primo deploy chiede il valore di
+# APP_PASSWORD: è la password che proteggerà il sito.
+services:
+  - type: web
+    name: video-downloader
+    runtime: docker
+    plan: free
+    envVars:
+      # sync: false -> Render la chiede al momento del deploy invece di tenerla nel file.
+      - key: APP_PASSWORD
+        sync: false
+      # I cookie servono solo se YouTube rifiuta le richieste dal server. Opzionale.
+      - key: YTDLP_COOKIES
+        sync: false
+      # Il piano gratuito ha poco disco: oltre questa soglia i file più vecchi vengono
+      # eliminati automaticamente.
+      - key: MAX_DISK_MB
+        value: "1024"
+      - key: JOB_TTL_MINUTES
+        value: "30"
