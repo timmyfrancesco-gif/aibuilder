@@ -38,8 +38,15 @@ app = FastAPI(title="Video Downloader", docs_url=None, redoc_url=None)
 PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
 
 
+# Il controllo di salute deve restare accessibile: i servizi di hosting lo interrogano
+# senza credenziali e considerano guasta (quindi da riavviare) un'istanza che risponde 401.
+PERCORSI_LIBERI = frozenset({"/healthz"})
+
+
 @app.middleware("http")
 async def richiedi_password(request: Request, call_next):
+    if request.url.path in PERCORSI_LIBERI:
+        return await call_next(request)
     if not PASSWORD or _password_valida(request.headers.get("authorization", "")):
         return await call_next(request)
     return Response(
@@ -91,6 +98,13 @@ class DownloadPayload(UrlPayload):
         if v != "best" and not (v.isdigit() and 144 <= int(v) <= 4320):
             raise ValueError("quality deve essere 'best' o un'altezza in pixel.")
         return v
+
+
+@app.get("/healthz")
+def healthz() -> dict:
+    """Sonda per il servizio di hosting. Volutamente priva di dettagli sull'ambiente,
+    dato che è l'unico indirizzo raggiungibile senza password."""
+    return {"status": "ok"}
 
 
 @app.get("/api/config")

@@ -5,6 +5,10 @@ services:
     name: video-downloader
     runtime: docker
     plan: free
+    # Indirizzo che Render interroga per sapere se l'app è viva. È escluso dalla
+    # password apposta: una risposta 401 verrebbe letta come guasto e farebbe
+    # riavviare il servizio all'infinito.
+    healthCheckPath: /healthz
     envVars:
       # sync: false -> Render la chiede al momento del deploy invece di tenerla nel file.
       - key: APP_PASSWORD

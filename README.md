@@ -90,6 +90,13 @@ Il repository contiene un `Dockerfile` (con ffmpeg già dentro) e un `render.yam
 
 Essendo su https, dal telefono compare anche il pulsante **Salva nelle Foto**.
 
+### Dominio personalizzato
+
+Render assegna un indirizzo `*.onrender.com` che funziona subito. Per usarne uno tuo:
+**Settings → Custom Domains → Add**, poi imposta presso il tuo registrar il record che
+Render ti indica (un CNAME verso l'indirizzo `onrender.com`, o un record A per il dominio
+nudo). Il certificato https lo emette Render da sé. Il piano gratuito include due domini.
+
 ### Limiti da conoscere
 
 - **YouTube spesso rifiuta le richieste dai datacenter.** È il motivo per cui yt-dlp include
@@ -97,8 +104,9 @@ Essendo su https, dal telefono compare anche il pulsante **Salva nelle Foto**.
   server in affitto no. Rimedio: esporta i cookie del tuo browser in formato Netscape e
   incollali nella variabile `YTDLP_COOKIES` — le richieste partiranno come da utente
   registrato. TikTok e la maggior parte degli altri siti non hanno questo problema.
-- **I piani gratuiti si addormentano** dopo qualche minuto di inattività: la prima richiesta
-  dopo una pausa può metterci un minuto.
+- **Il piano gratuito si addormenta** dopo 15 minuti di inattività e la prima richiesta
+  successiva impiega circa un minuto a svegliarlo. Non è quindi davvero attivo 24 ore su 24:
+  per esserlo serve un piano a pagamento (dai 7 $/mese), che toglie lo spegnimento.
 - **Il disco è poco e temporaneo.** `MAX_DISK_MB` (default 2048) elimina automaticamente i
   download conclusi più vecchi quando lo spazio supera la soglia, e `JOB_TTL_MINUTES`
   controlla dopo quanto un file scade. I download in corso non vengono mai toccati.
