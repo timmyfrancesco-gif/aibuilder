@@ -64,6 +64,12 @@ fi
 # I video finiscono sulla Scrivania. Per cambiarli cartella, modifica la riga qui sotto.
 export SAVE_DIR="\$HOME/Desktop"
 
+# TikTok e Instagram richiedono un account per molti contenuti: qui diciamo a yt-dlp
+# di riusare i cookie del browser in cui hai già fatto l'accesso.
+# Cambia in "chrome" o "firefox" se usi quelli. Se il browser non è leggibile,
+# l'app prosegue senza cookie invece di bloccarsi.
+export COOKIES_FROM_BROWSER="safari"
+
 # Apre il browser dopo un attimo, il tempo che il server sia pronto.
 ( sleep 2; open "http://localhost:8000" ) &
 

@@ -53,6 +53,37 @@ elif os.environ.get("YTDLP_COOKIES_FILE"):
     _percorso = Path(os.environ["YTDLP_COOKIES_FILE"])
     COOKIE_FILE = str(_percorso) if _percorso.is_file() else None
 
+# In locale è più comodo leggere i cookie direttamente dal browser in cui si è già
+# loggati: TikTok e Instagram li richiedono per buona parte dei contenuti.
+# Formato: "safari", "chrome", "firefox"… oppure "chrome:NomeProfilo".
+COOKIES_BROWSER: tuple[str, str | None, None, None] | None = None
+
+
+def _leggi_browser_cookie() -> tuple[str, str | None, None, None] | None:
+    grezzo = os.environ.get("COOKIES_FROM_BROWSER", "").strip()
+    if not grezzo:
+        return None
+
+    nome, _, profilo = grezzo.partition(":")
+    nome = nome.lower()
+
+    from yt_dlp.cookies import SUPPORTED_BROWSERS, extract_cookies_from_browser
+
+    if nome not in SUPPORTED_BROWSERS:
+        return None
+
+    # Una prova subito: se il browser non è leggibile (su macOS il Terminale ha bisogno
+    # dell'Accesso completo al disco per Safari), è meglio accorgersene adesso e
+    # proseguire senza cookie, invece di far fallire ogni singolo download.
+    try:
+        extract_cookies_from_browser(nome, profilo or None)
+    except Exception:  # noqa: BLE001 - qualunque problema significa "non usarli"
+        return None
+    return (nome, profilo or None, None, None)
+
+
+COOKIES_BROWSER = _leggi_browser_cookie()
+
 # YouTube cambia spesso il modo in cui serve i video, e una yt-dlp di qualche mese
 # semplicemente smette di funzionare: meglio dirlo prima che l'utente sbatta su un errore
 # incomprensibile.
@@ -223,6 +254,7 @@ def _base_opts() -> dict[str, Any]:
         "no_warnings": True,
         "noplaylist": True,
         "cookiefile": COOKIE_FILE,
+        "cookiesfrombrowser": COOKIES_BROWSER,
         # "quiet" non basta a togliere la barra di avanzamento di yt-dlp, che sporcherebbe
         # il terminale: l'avanzamento lo mostriamo noi nel browser.
         "noprogress": True,
@@ -519,6 +551,19 @@ def _pulisci_errore(messaggio: str) -> str:
             f"YouTube ha rifiutato la richiesta ({VERSIONE_YTDLP}). Di solito significa che "
             "yt-dlp è troppo vecchio per come funziona YouTube oggi: aggiornalo con "
             "«pip install -U yt-dlp»."
+        )
+    # TikTok e Instagram richiedono un account per buona parte dei contenuti.
+    if "requiring login" in testo or "login required" in testo.lower() or "--cookies" in testo:
+        if COOKIES_BROWSER:
+            return (
+                f"Il sito richiede un account. Sto già leggendo i cookie da "
+                f"{COOKIES_BROWSER[0].capitalize()}: assicurati di aver fatto l'accesso "
+                "in quel browser, poi riprova."
+            )
+        return (
+            "Questo contenuto richiede un account. Avvia l'app con "
+            "COOKIES_FROM_BROWSER=safari (o chrome, firefox) per usare i cookie del "
+            "browser in cui hai già fatto l'accesso."
         )
     if "Requested format is not available" in testo:
         return "La qualità richiesta non è disponibile per questo video: provane un'altra."
