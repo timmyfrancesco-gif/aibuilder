@@ -51,6 +51,12 @@ uvicorn app.main:app --reload --port 8000
 
 Apri http://localhost:8000
 
+### Avvio con un doppio clic (macOS)
+
+`bash setup-mac.sh` crea sulla Scrivania una cartella «app timmy» con etichetta rossa,
+dentro un file `.command` che avvia il server e apre il browser, e ne copia una versione
+su iCloud Drive. Da lì basta un doppio clic, senza passare dal Terminale.
+
 ## Dove finisce il file
 
 Su computer il download parte come qualsiasi altro: il file va nella cartella **Download**
