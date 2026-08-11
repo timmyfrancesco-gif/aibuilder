@@ -16,6 +16,7 @@ const startBtn = $("start");
 const ffmpegNote = $("ffmpeg-note");
 const ytdlpNote = $("ytdlp-note");
 const audioNote = $("audio-note");
+const cookiesNote = $("cookies-note");
 const progressBox = $("progress-box");
 const barFill = $("bar-fill");
 const progressLabel = $("progress-label");
@@ -54,8 +55,27 @@ async function init() {
     /* se la config non risponde restiamo sui default */
   }
   ffmpegNote.hidden = hasFfmpeg;
-  if (cfg) avvisaAmbiente(cfg);
+  if (cfg) {
+    avvisaAmbiente(cfg);
+    avvisaCookie(cfg);
+  }
   riprendiJob();
+}
+
+// TikTok e Instagram richiedono un account: meglio dire subito che i cookie non sono
+// leggibili, invece di lasciarlo scoprire da un download fallito.
+function avvisaCookie(cfg) {
+  if (cfg.cookies_stato === "lettura_fallita") {
+    cookiesNote.innerHTML =
+      "I cookie del browser <b>non sono leggibili</b>, quindi TikTok e Instagram " +
+      "chiederanno l'accesso. Su macOS serve dare al Terminale l'Accesso completo al " +
+      "disco (Impostazioni di Sistema → Privacy e sicurezza), poi riavviare l'app.";
+    cookiesNote.hidden = false;
+  } else if (cfg.cookies_stato === "browser_sconosciuto") {
+    cookiesNote.textContent =
+      `Il browser indicato per i cookie non è valido. ${cfg.cookies_dettaglio || ""}`;
+    cookiesNote.hidden = false;
+  }
 }
 
 // YouTube cambia spesso: una yt-dlp vecchia fallisce con errori che non dicono nulla.

@@ -65,10 +65,10 @@ fi
 export SAVE_DIR="\$HOME/Desktop"
 
 # TikTok e Instagram richiedono un account per molti contenuti: qui diciamo a yt-dlp
-# di riusare i cookie del browser in cui hai già fatto l'accesso.
-# Cambia in "chrome" o "firefox" se usi quelli. Se il browser non è leggibile,
-# l'app prosegue senza cookie invece di bloccarsi.
-export COOKIES_FROM_BROWSER="safari"
+# di riusare i cookie del browser in cui hai già fatto l'accesso. Dev'essere il browser
+# in cui sei loggato a quei siti. Cambia in "safari" o "firefox" se usi quelli.
+# Se il browser non è leggibile, l'app prosegue senza cookie invece di bloccarsi.
+export COOKIES_FROM_BROWSER="chrome"
 
 # Apre il browser dopo un attimo, il tempo che il server sia pronto.
 ( sleep 2; open "http://localhost:8000" ) &

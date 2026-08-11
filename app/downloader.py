@@ -57,11 +57,18 @@ elif os.environ.get("YTDLP_COOKIES_FILE"):
 # loggati: TikTok e Instagram li richiedono per buona parte dei contenuti.
 # Formato: "safari", "chrome", "firefox"… oppure "chrome:NomeProfilo".
 COOKIES_BROWSER: tuple[str, str | None, None, None] | None = None
+# Perché i cookie non sono attivi. Serve a dare all'utente l'istruzione giusta:
+# "non configurato" e "configurato ma illeggibile" richiedono rimedi opposti.
+COOKIES_STATO: str = "non_configurato"
+COOKIES_DETTAGLIO: str = ""
 
 
-def _leggi_browser_cookie() -> tuple[str, str | None, None, None] | None:
+def _leggi_browser_cookie():
+    global COOKIES_STATO, COOKIES_DETTAGLIO
+
     grezzo = os.environ.get("COOKIES_FROM_BROWSER", "").strip()
     if not grezzo:
+        COOKIES_STATO = "non_configurato"
         return None
 
     nome, _, profilo = grezzo.partition(":")
@@ -70,6 +77,8 @@ def _leggi_browser_cookie() -> tuple[str, str | None, None, None] | None:
     from yt_dlp.cookies import SUPPORTED_BROWSERS, extract_cookies_from_browser
 
     if nome not in SUPPORTED_BROWSERS:
+        COOKIES_STATO = "browser_sconosciuto"
+        COOKIES_DETTAGLIO = f"«{nome}» non è tra: {', '.join(sorted(SUPPORTED_BROWSERS))}"
         return None
 
     # Una prova subito: se il browser non è leggibile (su macOS il Terminale ha bisogno
@@ -77,8 +86,12 @@ def _leggi_browser_cookie() -> tuple[str, str | None, None, None] | None:
     # proseguire senza cookie, invece di far fallire ogni singolo download.
     try:
         extract_cookies_from_browser(nome, profilo or None)
-    except Exception:  # noqa: BLE001 - qualunque problema significa "non usarli"
+    except Exception as exc:  # noqa: BLE001 - qualunque problema significa "non usarli"
+        COOKIES_STATO = "lettura_fallita"
+        COOKIES_DETTAGLIO = f"{nome}: {str(exc).splitlines()[0][:200]}"
         return None
+
+    COOKIES_STATO = "attivo"
     return (nome, profilo or None, None, None)
 
 
@@ -554,11 +567,25 @@ def _pulisci_errore(messaggio: str) -> str:
         )
     # TikTok e Instagram richiedono un account per buona parte dei contenuti.
     if "requiring login" in testo or "login required" in testo.lower() or "--cookies" in testo:
-        if COOKIES_BROWSER:
+        if COOKIES_STATO == "attivo" and COOKIES_BROWSER:
             return (
-                f"Il sito richiede un account. Sto già leggendo i cookie da "
-                f"{COOKIES_BROWSER[0].capitalize()}: assicurati di aver fatto l'accesso "
-                "in quel browser, poi riprova."
+                f"Il sito richiede un account. I cookie di "
+                f"{COOKIES_BROWSER[0].capitalize()} vengono già letti: assicurati di aver "
+                f"fatto l'accesso al sito proprio in {COOKIES_BROWSER[0].capitalize()}, "
+                "poi riprova."
+            )
+        if COOKIES_STATO == "lettura_fallita":
+            return (
+                "Questo contenuto richiede un account, e i cookie del browser non sono "
+                "leggibili. Su macOS serve dare al Terminale l'Accesso completo al disco "
+                "(Impostazioni di Sistema → Privacy e sicurezza → Accesso completo al "
+                "disco), poi riavviare l'app. In alternativa esporta i cookie in un file "
+                f"e indicalo con YTDLP_COOKIES_FILE. Dettaglio: {COOKIES_DETTAGLIO}"
+            )
+        if COOKIES_STATO == "browser_sconosciuto":
+            return (
+                f"Questo contenuto richiede un account, ma il browser indicato non è "
+                f"valido. {COOKIES_DETTAGLIO}"
             )
         return (
             "Questo contenuto richiede un account. Avvia l'app con "
