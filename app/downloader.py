@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import socket
 import threading
 import time
 import uuid
@@ -98,16 +99,45 @@ def _leggi_browser_cookie():
 
 COOKIES_BROWSER = _leggi_browser_cookie()
 
-# Ricevendo i cookie di un account loggato, yt-dlp passa al client "tv_downgraded",
-# che YouTube respinge con «The page needs to be reloaded». Indicare client alternativi
-# è il rimedio consigliato da yt-dlp. Si applica solo quando i cookie sono in uso:
-# senza, i client predefiniti se la cavano meglio da soli.
-# YouTube serve i flussi solo a chi presenta un "PO Token", che yt-dlp da solo non sa
-# generare: i client che lo pretendono (web, mweb, ios, android…) restituiscono 403 sul
-# file vero pur consegnando i metadati. Questi tre non lo richiedono.
-PLAYER_CLIENT = os.environ.get("YTDLP_PLAYER_CLIENT", "tv,android_vr,web_embedded").strip()
-# Se anche quelli falliscono si riprova con i client predefiniti: quali funzionano cambia
-# spesso, quindi è meglio tentare entrambe le strade che fermarsi alla prima.
+# YouTube consegna i flussi solo a chi presenta un "PO Token". yt-dlp non sa generarlo,
+# ma esiste un componente esterno che lo fa (bgutil-ytdlp-pot-provider): se è in ascolto
+# si possono usare i client migliori, altrimenti si ripiega su quelli che il token non lo
+# richiedono — che però offrono meno formati.
+POT_PROVIDER_URL = os.environ.get("POT_PROVIDER_URL", "http://127.0.0.1:4416").strip()
+
+_pot_visto: float = 0.0
+_pot_stato: bool = False
+
+
+def pot_disponibile() -> bool:
+    """Vero se il generatore di token risponde. Basta la connessione TCP: non serve
+    sapere quale indirizzo esponga. L'esito viene ricordato per un po', così accenderlo
+    dopo l'app viene comunque notato senza rallentare ogni download."""
+    global _pot_visto, _pot_stato
+    if not POT_PROVIDER_URL:
+        return False
+    adesso = time.monotonic()
+    if adesso - _pot_visto < (300 if _pot_stato else 30):
+        return _pot_stato
+    _pot_visto = adesso
+    indirizzo = urlparse(POT_PROVIDER_URL)
+    try:
+        with socket.create_connection(
+            (indirizzo.hostname or "127.0.0.1", indirizzo.port or 4416), timeout=1.0
+        ):
+            _pot_stato = True
+    except OSError:
+        _pot_stato = False
+    return _pot_stato
+
+
+# Con il generatore attivo lascia scegliere yt-dlp: i client predefiniti danno la qualità
+# migliore. Senza, solo quelli che funzionano senza token.
+_CLIENT_IMPOSTATI = os.environ.get("YTDLP_PLAYER_CLIENT", "").strip()
+CLIENT_CON_TOKEN = _CLIENT_IMPOSTATI or "default"
+CLIENT_SENZA_TOKEN = _CLIENT_IMPOSTATI or "tv,android_vr,web_embedded"
+# Se il primo tentativo fallisce con 403 si prova l'altra famiglia: quali client YouTube
+# accetti cambia spesso, meglio due strade che fermarsi alla prima.
 PLAYER_CLIENT_RISERVA = os.environ.get("YTDLP_PLAYER_CLIENT_FALLBACK", "default").strip()
 
 # I cookie servono su TikTok e Instagram, ma su YouTube fanno danno: con una sessione
@@ -139,11 +169,17 @@ def _usa_cookie(url: str | None) -> bool:
     return True
 
 
+def _client_predefiniti() -> str:
+    return CLIENT_CON_TOKEN if pot_disponibile() else CLIENT_SENZA_TOKEN
+
+
 def _extractor_args(clients: str | None = None) -> dict[str, dict[str, list[str]]]:
     """Gli estrattori diversi da YouTube ignorano questa chiave, quindi si può passare
     sempre."""
-    elenco = [c.strip() for c in (clients or PLAYER_CLIENT).split(",") if c.strip()]
+    scelti = clients or _client_predefiniti()
+    elenco = [c.strip() for c in scelti.split(",") if c.strip()]
     return {"youtube": {"player_client": elenco}} if elenco else {}
+
 
 # YouTube cambia spesso il modo in cui serve i video, e una yt-dlp di qualche mese
 # semplicemente smette di funzionare: meglio dirlo prima che l'utente sbatta su un errore
@@ -696,12 +732,16 @@ def _pulisci_errore(messaggio: str) -> str:
         )
     # 403 sul flusso: i metadati arrivano, il file no. È la firma del PO Token mancante.
     if _e_403(testo) or "unable to download video data" in testo:
+        if pot_disponibile():
+            return (
+                "YouTube ha consegnato le informazioni del video ma non il file (403), "
+                "pur con il generatore di token attivo. Prova un altro video: a volte il "
+                "blocco riguarda solo alcuni contenuti."
+            )
         return (
-            "YouTube ha consegnato le informazioni del video ma non il file "
-            "(403). Succede quando pretende un token che yt-dlp non genera da sé. "
-            "L'app ha già provato più famiglie di client. Puoi cambiarle con "
-            "YTDLP_PLAYER_CLIENT (per esempio «tv» o «android_vr»), oppure provare "
-            "un altro video: spesso il blocco riguarda solo alcuni contenuti."
+            "YouTube ha consegnato le informazioni del video ma non il file (403): "
+            "pretende un token che yt-dlp non sa generare da sé. Si risolve installando "
+            "il generatore con «bash setup-potoken.sh» e riavviando l'app."
         )
     if "Requested format is not available" in testo:
         return "La qualità richiesta non è disponibile per questo video: provane un'altra."

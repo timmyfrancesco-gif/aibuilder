@@ -51,6 +51,13 @@ uvicorn app.main:app --reload --port 8000
 
 Apri http://localhost:8000
 
+### Se YouTube risponde 403
+
+YouTube consegna i metadati ma nega il file vero a chi non presenta un *PO Token*, che
+yt-dlp non sa generare. `bash setup-potoken.sh` installa il generatore ufficiale
+(plugin yt-dlp + un piccolo server Node): l'avviatore poi lo accende da sé, e l'app se ne
+accorge e torna a usare i client che danno la qualità migliore.
+
 ### Avvio con un doppio clic (macOS)
 
 `bash setup-mac.sh` crea sulla Scrivania una cartella «app timmy» con etichetta rossa,
@@ -127,6 +134,7 @@ nudo). Il certificato https lo emette Render da sé. Il piano gratuito include d
 | `YTDLP_COOKIES`     | Cookie in formato Netscape, per superare i blocchi di YouTube      |
 | `COOKIES_FROM_BROWSER` | Legge i cookie dal browser indicato (`chrome`, `safari`, `firefox`) |
 | `YTDLP_PLAYER_CLIENT` | Client YouTube da usare (default `tv,android_vr,web_embedded`, che non richiedono PO Token) |
+| `POT_PROVIDER_URL` | Indirizzo del generatore di PO Token (default `http://127.0.0.1:4416`) |
 | `YTDLP_PLAYER_CLIENT_FALLBACK` | Client del secondo tentativo dopo un 403 (default `default`) |
 | `COOKIES_ON_YOUTUBE` | Usa i cookie anche su YouTube (sconsigliato: di solito peggiora) |
 | `SAVE_DIR`          | Cartella in cui copiare i file finiti (es. `~/Desktop`)             |

@@ -70,6 +70,22 @@ export SAVE_DIR="\$HOME/Desktop"
 # Se il browser non è leggibile, l'app prosegue senza cookie invece di bloccarsi.
 export COOKIES_FROM_BROWSER="chrome"
 
+# Il generatore di PO Token, se installato con setup-potoken.sh: senza, YouTube
+# consegna i metadati ma nega il file vero (errore 403).
+if [ -f "\$PROGETTO/pot-provider/server/build/main.js" ]; then
+    if ! nc -z 127.0.0.1 4416 >/dev/null 2>&1; then
+        echo "Avvio il generatore di token..."
+        ( cd "\$PROGETTO/pot-provider/server" && node build/main.js >/dev/null 2>&1 ) &
+        POT_PID=\$!
+        # Alla chiusura della finestra si spegne anche lui, senza restare in giro.
+        trap 'kill \$POT_PID 2>/dev/null' EXIT INT TERM
+        sleep 3
+    fi
+else
+    echo "Nota: generatore di token non installato. Se YouTube da errore 403,"
+    echo "lancia una volta:  bash \$PROGETTO/setup-potoken.sh"
+fi
+
 # Apre il browser dopo un attimo, il tempo che il server sia pronto.
 ( sleep 2; open "http://localhost:8000" ) &
 
