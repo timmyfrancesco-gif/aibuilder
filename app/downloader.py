@@ -516,6 +516,40 @@ _BANNER_FFMPEG = re.compile(
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
+def _errore_youtube_rifiutata() -> str:
+    """YouTube respinge sia le yt-dlp obsolete sia le richieste che gli sembrano
+    automatiche. Sono cause diverse con rimedi opposti: confonderle manda l'utente ad
+    aggiornare una versione che è già l'ultima."""
+    eta = eta_ytdlp_giorni()
+    if eta is not None and eta > YTDLP_SCADE_DOPO_GIORNI:
+        return (
+            f"YouTube ha rifiutato la richiesta e yt-dlp {VERSIONE_YTDLP} ha circa "
+            f"{max(1, eta // 30)} mesi: aggiornala con «pip install -U yt-dlp»."
+        )
+
+    # yt-dlp è aggiornata: resta la verifica con cui YouTube filtra le richieste
+    # che non sembrano venire da un browser.
+    if COOKIES_STATO == "attivo" and COOKIES_BROWSER:
+        browser = COOKIES_BROWSER[0].capitalize()
+        return (
+            f"YouTube ha rifiutato la richiesta pur usando i cookie di {browser}. "
+            f"Controlla di aver fatto l'accesso a YouTube proprio in {browser}; se hai "
+            "appena effettuato l'accesso, riavvia l'app per rileggere i cookie."
+        )
+    if COOKIES_STATO == "lettura_fallita":
+        return (
+            "YouTube chiede una verifica che si supera con i cookie del browser, ma non "
+            "sono leggibili. Su macOS serve dare al Terminale l'Accesso completo al disco "
+            "(Impostazioni di Sistema \u2192 Privacy e sicurezza), poi riavviare l'app. "
+            f"Dettaglio: {COOKIES_DETTAGLIO}"
+        )
+    return (
+        "YouTube chiede una verifica per distinguere le persone dai programmi. Si supera "
+        "riusando i cookie del browser in cui hai gi\u00e0 fatto l'accesso: avvia l'app con "
+        "COOKIES_FROM_BROWSER=chrome (o safari, firefox)."
+    )
+
+
 def _pulisci_errore(messaggio: str) -> str:
     """Rende leggibile l'output di yt-dlp."""
     messaggio = _ANSI.sub("", messaggio).replace("ERROR: ", "")
@@ -554,17 +588,13 @@ def _pulisci_errore(messaggio: str) -> str:
             "YouTube ha richiesto una verifica per questa richiesta. "
             "Riprova più tardi o configura i cookie di yt-dlp."
         )
-    # Errori con cui YouTube respinge le versioni di yt-dlp che non riconosce più.
+    # Errori con cui YouTube respinge una richiesta che non riconosce.
     if (
         "page needs to be reloaded" in testo
         or "Failed to extract any player response" in testo
         or "nsig extraction failed" in testo
     ):
-        return (
-            f"YouTube ha rifiutato la richiesta ({VERSIONE_YTDLP}). Di solito significa che "
-            "yt-dlp è troppo vecchio per come funziona YouTube oggi: aggiornalo con "
-            "«pip install -U yt-dlp»."
-        )
+        return _errore_youtube_rifiutata()
     # TikTok e Instagram richiedono un account per buona parte dei contenuti.
     if "requiring login" in testo or "login required" in testo.lower() or "--cookies" in testo:
         if COOKIES_STATO == "attivo" and COOKIES_BROWSER:
