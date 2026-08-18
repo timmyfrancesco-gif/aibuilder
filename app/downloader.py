@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 from yt_dlp import YoutubeDL
@@ -103,9 +104,37 @@ COOKIES_BROWSER = _leggi_browser_cookie()
 # senza, i client predefiniti se la cavano meglio da soli.
 PLAYER_CLIENT = os.environ.get("YTDLP_PLAYER_CLIENT", "default,web_embedded").strip()
 
+# I cookie servono su TikTok e Instagram, ma su YouTube fanno danno: con una sessione
+# loggata yt-dlp sceglie un client che YouTube respinge. Quindi si usano ovunque tranne
+# che su YouTube, salvo forzarli esplicitamente.
+COOKIES_ANCHE_SU_YOUTUBE = os.environ.get("COOKIES_ON_YOUTUBE", "").strip().lower() in (
+    "1",
+    "true",
+    "si",
+    "yes",
+)
 
-def _extractor_args() -> dict[str, dict[str, list[str]]]:
-    if not (COOKIES_BROWSER or COOKIE_FILE) or not PLAYER_CLIENT:
+_HOST_YOUTUBE = re.compile(r"(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$", re.I)
+
+
+def _e_youtube(url: str) -> bool:
+    try:
+        host = urlparse(url).hostname or ""
+    except ValueError:
+        return False
+    return bool(_HOST_YOUTUBE.search(host))
+
+
+def _usa_cookie(url: str | None) -> bool:
+    if not (COOKIES_BROWSER or COOKIE_FILE):
+        return False
+    if url and _e_youtube(url) and not COOKIES_ANCHE_SU_YOUTUBE:
+        return False
+    return True
+
+
+def _extractor_args(usa_cookie: bool) -> dict[str, dict[str, list[str]]]:
+    if not usa_cookie or not PLAYER_CLIENT:
         return {}
     clients = [c.strip() for c in PLAYER_CLIENT.split(",") if c.strip()]
     return {"youtube": {"player_client": clients}}
@@ -274,14 +303,15 @@ def _format_selector(mode: str, quality: str) -> tuple[str, list[dict[str, Any]]
 FORMAT_SORT = ["res", "vcodec:h264", "ext:mp4:m4a"]
 
 
-def _base_opts() -> dict[str, Any]:
+def _base_opts(url: str | None = None) -> dict[str, Any]:
+    usa_cookie = _usa_cookie(url)
     return {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "cookiefile": COOKIE_FILE,
-        "cookiesfrombrowser": COOKIES_BROWSER,
-        "extractor_args": _extractor_args(),
+        "cookiefile": COOKIE_FILE if usa_cookie else None,
+        "cookiesfrombrowser": COOKIES_BROWSER if usa_cookie else None,
+        "extractor_args": _extractor_args(usa_cookie),
         # "quiet" non basta a togliere la barra di avanzamento di yt-dlp, che sporcherebbe
         # il terminale: l'avanzamento lo mostriamo noi nel browser.
         "noprogress": True,
@@ -295,7 +325,7 @@ def fetch_info(url: str) -> dict[str, Any]:
     """Metadati del video senza scaricare nulla."""
     # "noplaylist" non copre gli indirizzi di playlist o di canale: senza un limite
     # esplicito yt-dlp estrarrebbe ogni singolo video prima di restituire il primo.
-    opts = _base_opts() | {"skip_download": True, "playlist_items": "1"}
+    opts = _base_opts(url) | {"skip_download": True, "playlist_items": "1"}
     try:
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -353,7 +383,7 @@ def _run(job: Job) -> None:
 
     fmt, postprocessors, _ext = _format_selector(job.mode, job.quality)
 
-    opts = _base_opts() | {
+    opts = _base_opts(job.url) | {
         "format": fmt,
         "format_sort": FORMAT_SORT,
         "postprocessors": postprocessors,
@@ -543,13 +573,19 @@ def _errore_youtube_rifiutata() -> str:
 
     # yt-dlp è aggiornata: resta la verifica con cui YouTube filtra le richieste
     # che non sembrano venire da un browser.
-    if COOKIES_STATO == "attivo" and COOKIES_BROWSER:
+    if COOKIES_STATO == "attivo" and COOKIES_BROWSER and COOKIES_ANCHE_SU_YOUTUBE:
         browser = COOKIES_BROWSER[0].capitalize()
         return (
-            f"YouTube ha rifiutato la richiesta pur usando i cookie di {browser}. "
-            f"Controlla di aver fatto l'accesso a YouTube proprio in {browser}. Se il "
-            "problema resta, prova ad avviare l'app senza COOKIES_FROM_BROWSER: su "
-            "YouTube i cookie a volte peggiorano le cose (restano necessari per TikTok)."
+            f"YouTube ha rifiutato la richiesta pur usando i cookie di {browser}, che qui "
+            "sono forzati da COOKIES_ON_YOUTUBE. Prova a togliere quella variabile: su "
+            "YouTube i cookie di solito peggiorano le cose."
+        )
+    if COOKIES_STATO == "attivo":
+        return (
+            "YouTube ha rifiutato la richiesta. Su YouTube i cookie non vengono usati "
+            "(lì fanno più danno che altro) e restano attivi per TikTok. Questa verifica "
+            "è spesso passeggera: riprova fra qualche minuto, o con un altro video per "
+            "capire se riguarda solo questo."
         )
     if COOKIES_STATO == "lettura_fallita":
         return (
