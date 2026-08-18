@@ -81,9 +81,28 @@ if [ -f "\$PROGETTO/pot-provider/server/build/main.js" ]; then
         trap 'kill \$POT_PID 2>/dev/null' EXIT INT TERM
         sleep 3
     fi
-else
-    echo "Nota: generatore di token non installato. Se YouTube da errore 403,"
-    echo "lancia una volta:  bash \$PROGETTO/setup-potoken.sh"
+elif [ -f "\$PROGETTO/setup-potoken.sh" ]; then
+    # Prima volta: senza generatore YouTube risponde 403, quindi lo installiamo qui
+    # invece di lasciare all'utente un altro comando da ricordare. Richiede qualche
+    # minuto e succede una volta sola.
+    echo "======================================================================"
+    echo " Manca il generatore di token, senza il quale YouTube nega i file."
+    echo " Lo installo adesso: puo richiedere qualche minuto, succede una volta sola."
+    echo "======================================================================"
+    if bash "\$PROGETTO/setup-potoken.sh"; then
+        if [ -f "\$PROGETTO/pot-provider/server/build/main.js" ]; then
+            ( cd "\$PROGETTO/pot-provider/server" && node build/main.js >/dev/null 2>&1 ) &
+            POT_PID=\$!
+            trap 'kill \$POT_PID 2>/dev/null' EXIT INT TERM
+            sleep 3
+            echo "Generatore installato e avviato."
+        fi
+    else
+        echo
+        echo "Installazione del generatore non riuscita: l'app parte lo stesso e"
+        echo "funziona su TikTok e su molti video, ma YouTube puo dare errore 403."
+        echo
+    fi
 fi
 
 # Apre il browser dopo un attimo, il tempo che il server sia pronto.
