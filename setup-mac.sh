@@ -61,6 +61,14 @@ if [ "\$VERSIONE" != "True" ]; then
     echo
 fi
 
+# Il risolutore delle sfide JavaScript di YouTube. Senza, YouTube consegna i metadati
+# ma nega i file con errore 403: e la causa piu comune, quindi lo installiamo qui.
+if ! python -c "import yt_dlp_ejs" >/dev/null 2>&1; then
+    echo "Manca il risolutore JavaScript di yt-dlp: lo installo (un minuto)..."
+    python -m pip install -q -U "yt-dlp[default,deno]" || \
+        echo "Installazione non riuscita: su YouTube potresti vedere errore 403."
+fi
+
 # I video finiscono sulla Scrivania. Per cambiarli cartella, modifica la riga qui sotto.
 export SAVE_DIR="\$HOME/Desktop"
 

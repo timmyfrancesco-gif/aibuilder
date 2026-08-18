@@ -103,6 +103,38 @@ COOKIES_BROWSER = _leggi_browser_cookie()
 # ma esiste un componente esterno che lo fa (bgutil-ytdlp-pot-provider): se è in ascolto
 # si possono usare i client migliori, altrimenti si ripiega su quelli che il token non lo
 # richiedono — che però offrono meno formati.
+# Per servire i formati buoni YouTube pone una sfida in JavaScript, che yt-dlp risolve
+# solo con un runtime esterno. Di suo ne abilita uno solo (deno); qui abilitiamo anche
+# node, che l'installazione del generatore di token porta comunque con sé.
+JS_RUNTIMES = {"deno": {}, "node": {}}
+
+
+def runtime_js_disponibile() -> str | None:
+    """Nome del primo runtime JavaScript utilizzabile, o None. Senza, YouTube consegna
+    solo i formati del client android_vr, che poi rifiuta con 403."""
+    for nome in JS_RUNTIMES:
+        if shutil.which(nome):
+            return nome
+    # pip può averlo messo dentro il virtualenv invece che nel PATH di sistema.
+    import sysconfig
+
+    bin_venv = sysconfig.get_path("scripts")
+    for nome in JS_RUNTIMES:
+        if bin_venv and (Path(bin_venv) / nome).exists():
+            return nome
+    return None
+
+
+def risolutore_js_disponibile() -> bool:
+    """Il pacchetto yt-dlp-ejs contiene lo script che il runtime esegue: senza, avere
+    il runtime non basta. Arriva con l'extra [default] di yt-dlp."""
+    try:
+        import yt_dlp_ejs  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 POT_PROVIDER_URL = os.environ.get("POT_PROVIDER_URL", "http://127.0.0.1:4416").strip()
 
 _pot_visto: float = 0.0
@@ -354,6 +386,7 @@ def _base_opts(url: str | None = None, clients: str | None = None) -> dict[str, 
         "cookiefile": COOKIE_FILE if usa_cookie else None,
         "cookiesfrombrowser": COOKIES_BROWSER if usa_cookie else None,
         "extractor_args": _extractor_args(clients),
+        "js_runtimes": JS_RUNTIMES,
         # "quiet" non basta a togliere la barra di avanzamento di yt-dlp, che sporcherebbe
         # il terminale: l'avanzamento lo mostriamo noi nel browser.
         "noprogress": True,
@@ -732,11 +765,23 @@ def _pulisci_errore(messaggio: str) -> str:
         )
     # 403 sul flusso: i metadati arrivano, il file no. È la firma del PO Token mancante.
     if _e_403(testo) or "unable to download video data" in testo:
+        if not risolutore_js_disponibile() or not runtime_js_disponibile():
+            manca = (
+                "il risolutore (pacchetto yt-dlp-ejs)"
+                if not risolutore_js_disponibile()
+                else "un runtime JavaScript (deno o node)"
+            )
+            return (
+                f"YouTube ha consegnato le informazioni ma non il file (403): manca {manca}. "
+                "Per servire i formati buoni YouTube pone una sfida in JavaScript; senza "
+                "risolverla resta solo un client che YouTube rifiuta. Si sistema con "
+                "«pip install -U \"yt-dlp[default,deno]\"» nel virtualenv, poi riavvia l'app."
+            )
         if pot_disponibile():
             return (
                 "YouTube ha consegnato le informazioni del video ma non il file (403), "
-                "pur con il generatore di token attivo. Prova un altro video: a volte il "
-                "blocco riguarda solo alcuni contenuti."
+                "pur con generatore di token e risolutore JavaScript attivi. Prova un "
+                "altro video: a volte il blocco riguarda solo alcuni contenuti."
             )
         return (
             "YouTube ha consegnato le informazioni del video ma non il file (403): "

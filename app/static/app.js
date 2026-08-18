@@ -17,6 +17,7 @@ const ffmpegNote = $("ffmpeg-note");
 const ytdlpNote = $("ytdlp-note");
 const audioNote = $("audio-note");
 const cookiesNote = $("cookies-note");
+const jsNote = $("js-note");
 const progressBox = $("progress-box");
 const barFill = $("bar-fill");
 const progressLabel = $("progress-label");
@@ -58,6 +59,7 @@ async function init() {
   if (cfg) {
     avvisaAmbiente(cfg);
     avvisaCookie(cfg);
+    avvisaJs(cfg);
   }
   riprendiJob();
 }
@@ -75,6 +77,22 @@ function avvisaCookie(cfg) {
     cookiesNote.textContent =
       `Il browser indicato per i cookie non è valido. ${cfg.cookies_dettaglio || ""}`;
     cookiesNote.hidden = false;
+  }
+}
+
+// Senza risolutore o runtime JavaScript, YouTube consegna i metadati ma nega i file.
+// È la causa piu comune del 403, e si vede prima di provare.
+function avvisaJs(cfg) {
+  if (cfg.js_solver === false || !cfg.js_runtime) {
+    const manca = cfg.js_solver === false
+      ? "il risolutore <b>yt-dlp-ejs</b>"
+      : "un <b>runtime JavaScript</b> (deno o node)";
+    jsNote.innerHTML =
+      `Su YouTube i download falliranno con errore 403: manca ${manca}. ` +
+      "Nel Terminale, dentro la cartella del progetto: " +
+      "<code>source .venv/bin/activate</code> poi " +
+      '<code>pip install -U "yt-dlp[default,deno]"</code>, e riavvia l\'app.';
+    jsNote.hidden = false;
   }
 }
 

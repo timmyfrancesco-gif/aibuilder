@@ -27,6 +27,15 @@ printf "  ffmpeg      : %s\n" "$(ffmpeg -version 2>/dev/null | head -1 | cut -d'
 printf "  node        : %s\n" "$(node -v 2>/dev/null || echo assente)"
 printf "  deno        : %s\n" "$(deno --version 2>/dev/null | head -1 || echo assente)"
 
+echo -n "  risolutore  : "
+python -c "
+try:
+    import yt_dlp_ejs
+    print('yt-dlp-ejs presente')
+except ImportError:
+    print('ASSENTE  <-- causa tipica del 403')
+" 2>/dev/null
+
 if nc -z 127.0.0.1 4416 >/dev/null 2>&1; then
     echo "  generatore  : in ascolto sulla porta 4416"
 else

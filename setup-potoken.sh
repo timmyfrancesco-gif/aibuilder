@@ -40,6 +40,9 @@ if [ ! -f .venv/bin/activate ]; then
     exit 1
 fi
 source .venv/bin/activate
+# Gli extra di yt-dlp: [default] porta il risolutore delle sfide JavaScript senza il
+# quale YouTube rifiuta i file, [deno] il runtime che lo esegue.
+python -m pip install -U "yt-dlp[default,deno]" || exit 1
 python -m pip install -U bgutil-ytdlp-pot-provider || exit 1
 
 # La versione del server deve combaciare con quella del plugin, altrimenti non si parlano.

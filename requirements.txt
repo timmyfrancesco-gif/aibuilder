@@ -1,6 +1,7 @@
-# yt-dlp richiede Python 3.10+ dalle release del 2026. Su Python 3.9 pip si ferma
-# alla 2025.10.14, che YouTube rifiuta: se l'installazione fallisce qui, il problema
-# è la versione di Python, non questo file.
-yt-dlp>=2026.7.4
+# ATTENZIONE all'extra [default]: senza, pip NON installa yt-dlp-ejs, il risolutore
+# delle sfide JavaScript di YouTube. Senza quello yt-dlp ripiega sull'unico client che
+# non ne ha bisogno (android_vr), le cui URL YouTube rifiuta con «HTTP Error 403».
+# L'extra [deno] installa nel virtualenv il runtime che esegue il risolutore.
+yt-dlp[default,deno]>=2026.7.4
 fastapi>=0.115
 uvicorn[standard]>=0.30
