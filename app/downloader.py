@@ -102,7 +102,13 @@ COOKIES_BROWSER = _leggi_browser_cookie()
 # che YouTube respinge con «The page needs to be reloaded». Indicare client alternativi
 # è il rimedio consigliato da yt-dlp. Si applica solo quando i cookie sono in uso:
 # senza, i client predefiniti se la cavano meglio da soli.
-PLAYER_CLIENT = os.environ.get("YTDLP_PLAYER_CLIENT", "default,web_embedded").strip()
+# YouTube serve i flussi solo a chi presenta un "PO Token", che yt-dlp da solo non sa
+# generare: i client che lo pretendono (web, mweb, ios, android…) restituiscono 403 sul
+# file vero pur consegnando i metadati. Questi tre non lo richiedono.
+PLAYER_CLIENT = os.environ.get("YTDLP_PLAYER_CLIENT", "tv,android_vr,web_embedded").strip()
+# Se anche quelli falliscono si riprova con i client predefiniti: quali funzionano cambia
+# spesso, quindi è meglio tentare entrambe le strade che fermarsi alla prima.
+PLAYER_CLIENT_RISERVA = os.environ.get("YTDLP_PLAYER_CLIENT_FALLBACK", "default").strip()
 
 # I cookie servono su TikTok e Instagram, ma su YouTube fanno danno: con una sessione
 # loggata yt-dlp sceglie un client che YouTube respinge. Quindi si usano ovunque tranne
@@ -133,11 +139,11 @@ def _usa_cookie(url: str | None) -> bool:
     return True
 
 
-def _extractor_args(usa_cookie: bool) -> dict[str, dict[str, list[str]]]:
-    if not usa_cookie or not PLAYER_CLIENT:
-        return {}
-    clients = [c.strip() for c in PLAYER_CLIENT.split(",") if c.strip()]
-    return {"youtube": {"player_client": clients}}
+def _extractor_args(clients: str | None = None) -> dict[str, dict[str, list[str]]]:
+    """Gli estrattori diversi da YouTube ignorano questa chiave, quindi si può passare
+    sempre."""
+    elenco = [c.strip() for c in (clients or PLAYER_CLIENT).split(",") if c.strip()]
+    return {"youtube": {"player_client": elenco}} if elenco else {}
 
 # YouTube cambia spesso il modo in cui serve i video, e una yt-dlp di qualche mese
 # semplicemente smette di funzionare: meglio dirlo prima che l'utente sbatta su un errore
@@ -303,7 +309,7 @@ def _format_selector(mode: str, quality: str) -> tuple[str, list[dict[str, Any]]
 FORMAT_SORT = ["res", "vcodec:h264", "ext:mp4:m4a"]
 
 
-def _base_opts(url: str | None = None) -> dict[str, Any]:
+def _base_opts(url: str | None = None, clients: str | None = None) -> dict[str, Any]:
     usa_cookie = _usa_cookie(url)
     return {
         "quiet": True,
@@ -311,7 +317,7 @@ def _base_opts(url: str | None = None) -> dict[str, Any]:
         "noplaylist": True,
         "cookiefile": COOKIE_FILE if usa_cookie else None,
         "cookiesfrombrowser": COOKIES_BROWSER if usa_cookie else None,
-        "extractor_args": _extractor_args(usa_cookie),
+        "extractor_args": _extractor_args(clients),
         # "quiet" non basta a togliere la barra di avanzamento di yt-dlp, che sporcherebbe
         # il terminale: l'avanzamento lo mostriamo noi nel browser.
         "noprogress": True,
@@ -402,8 +408,19 @@ def _run(job: Job) -> None:
     # Tutto dentro il try: se qualcosa fallisce dopo il download, il thread muore in
     # silenzio e il job resterebbe "in corso" per sempre agli occhi dell'utente.
     try:
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(job.url, download=True)
+        try:
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(job.url, download=True)
+        except DownloadError as exc:
+            # 403 sul flusso: i metadati arrivano ma YouTube nega il file vero. Cambiare
+            # famiglia di client è spesso sufficiente, quindi vale un secondo tentativo.
+            if not _e_403(str(exc)) or not PLAYER_CLIENT_RISERVA:
+                raise
+            job.step = "nuovo tentativo con client diversi"
+            job.progress = 0.0
+            opts_riserva = opts | _base_opts(job.url, PLAYER_CLIENT_RISERVA)
+            with YoutubeDL(opts_riserva) as ydl:
+                info = ydl.extract_info(job.url, download=True)
         job.title = info.get("title")
 
         finale = _file_prodotto(info, cartella)
@@ -560,6 +577,10 @@ _BANNER_FFMPEG = re.compile(
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
+def _e_403(messaggio: str) -> bool:
+    return "403" in messaggio and "Forbidden" in messaggio
+
+
 def _errore_youtube_rifiutata() -> str:
     """YouTube respinge sia le yt-dlp obsolete sia le richieste che gli sembrano
     automatiche. Sono cause diverse con rimedi opposti: confonderle manda l'utente ad
@@ -672,6 +693,15 @@ def _pulisci_errore(messaggio: str) -> str:
             "Questo contenuto richiede un account. Avvia l'app con "
             "COOKIES_FROM_BROWSER=safari (o chrome, firefox) per usare i cookie del "
             "browser in cui hai già fatto l'accesso."
+        )
+    # 403 sul flusso: i metadati arrivano, il file no. È la firma del PO Token mancante.
+    if _e_403(testo) or "unable to download video data" in testo:
+        return (
+            "YouTube ha consegnato le informazioni del video ma non il file "
+            "(403). Succede quando pretende un token che yt-dlp non genera da sé. "
+            "L'app ha già provato più famiglie di client. Puoi cambiarle con "
+            "YTDLP_PLAYER_CLIENT (per esempio «tv» o «android_vr»), oppure provare "
+            "un altro video: spesso il blocco riguarda solo alcuni contenuti."
         )
     if "Requested format is not available" in testo:
         return "La qualità richiesta non è disponibile per questo video: provane un'altra."
