@@ -125,6 +125,9 @@ nudo). Il certificato https lo emette Render da sé. Il piano gratuito include d
 |---------------------|------------------------------------------------------------------|
 | `APP_PASSWORD`      | Protegge il sito. Se vuota, nessuna password (solo per uso locale) |
 | `YTDLP_COOKIES`     | Cookie in formato Netscape, per superare i blocchi di YouTube      |
+| `COOKIES_FROM_BROWSER` | Legge i cookie dal browser indicato (`chrome`, `safari`, `firefox`) |
+| `YTDLP_PLAYER_CLIENT` | Client YouTube usati quando i cookie sono attivi (default `default,web_embedded`) |
+| `SAVE_DIR`          | Cartella in cui copiare i file finiti (es. `~/Desktop`)             |
 | `MAX_DISK_MB`       | Spazio massimo occupato dai download conclusi (default 2048)        |
 | `JOB_TTL_MINUTES`   | Dopo quanto un file scaricato viene eliminato (default 60)          |
 | `PORT`              | Porta di ascolto, assegnata dal servizio di hosting                 |

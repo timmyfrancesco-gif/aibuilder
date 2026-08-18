@@ -97,6 +97,19 @@ def _leggi_browser_cookie():
 
 COOKIES_BROWSER = _leggi_browser_cookie()
 
+# Ricevendo i cookie di un account loggato, yt-dlp passa al client "tv_downgraded",
+# che YouTube respinge con «The page needs to be reloaded». Indicare client alternativi
+# è il rimedio consigliato da yt-dlp. Si applica solo quando i cookie sono in uso:
+# senza, i client predefiniti se la cavano meglio da soli.
+PLAYER_CLIENT = os.environ.get("YTDLP_PLAYER_CLIENT", "default,web_embedded").strip()
+
+
+def _extractor_args() -> dict[str, dict[str, list[str]]]:
+    if not (COOKIES_BROWSER or COOKIE_FILE) or not PLAYER_CLIENT:
+        return {}
+    clients = [c.strip() for c in PLAYER_CLIENT.split(",") if c.strip()]
+    return {"youtube": {"player_client": clients}}
+
 # YouTube cambia spesso il modo in cui serve i video, e una yt-dlp di qualche mese
 # semplicemente smette di funzionare: meglio dirlo prima che l'utente sbatta su un errore
 # incomprensibile.
@@ -268,6 +281,7 @@ def _base_opts() -> dict[str, Any]:
         "noplaylist": True,
         "cookiefile": COOKIE_FILE,
         "cookiesfrombrowser": COOKIES_BROWSER,
+        "extractor_args": _extractor_args(),
         # "quiet" non basta a togliere la barra di avanzamento di yt-dlp, che sporcherebbe
         # il terminale: l'avanzamento lo mostriamo noi nel browser.
         "noprogress": True,
@@ -533,8 +547,9 @@ def _errore_youtube_rifiutata() -> str:
         browser = COOKIES_BROWSER[0].capitalize()
         return (
             f"YouTube ha rifiutato la richiesta pur usando i cookie di {browser}. "
-            f"Controlla di aver fatto l'accesso a YouTube proprio in {browser}; se hai "
-            "appena effettuato l'accesso, riavvia l'app per rileggere i cookie."
+            f"Controlla di aver fatto l'accesso a YouTube proprio in {browser}. Se il "
+            "problema resta, prova ad avviare l'app senza COOKIES_FROM_BROWSER: su "
+            "YouTube i cookie a volte peggiorano le cose (restano necessari per TikTok)."
         )
     if COOKIES_STATO == "lettura_fallita":
         return (
